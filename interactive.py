@@ -15,6 +15,7 @@ if __name__ == '__main__':
     modelc = torch.compile(model)
     modelc.load_state_dict(
         torch.load(sys.argv[1], map_location='cpu')['model'])
+    model.eval()
 
     opts = SimpleNamespace(
         temperature=1.0,

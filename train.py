@@ -29,15 +29,15 @@ def sample(model,
            sep=''):
     rank = next(model.parameters()).device
     model.eval()
-    text = Text(seed)
+    encoded = bpe.encode_text(seed)
+    if print_as_you_go:
+        print(bpe.decode_text(encoded, sep.encode()), end='', flush=True)
     with torch.no_grad() and suppress(KeyboardInterrupt):
         for _ in range(num_tokens):
-            text.tokenize(bpe.merges)
-            encoded = text.as_tokens()
-            encoded = encoded[-ctx_len:]
-            encoded_t = torch.tensor([encoded], dtype=torch.long).to(rank)
+            encoded_t = torch.tensor([encoded[-ctx_len:]],
+                                     dtype=torch.long).to(rank)
             logits = model(encoded_t)[0][-1].cpu()
-            logits[torch.tensor([bpe.SOH, bpe.STX, bpe.DC1, bpe.DC2,
+            logits[torch.tensor([bpe.STX, bpe.DC1, bpe.DC2,
                                  bpe.DC3])] = -float('inf')
             logits = logits / temperature
 
@@ -73,8 +73,8 @@ def sample(model,
                 print(bpe.vocab[next_token].decode('utf-8', 'ignore'),
                       end=sep,
                       flush=True)
-            text.set_tokens(encoded + [next_token])
-        return bpe.decode_text(text.as_tokens())
+            encoded.append(next_token)
+        return bpe.decode_text(encoded, sep.encode())
 
 
 def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
@@ -93,16 +93,17 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
     ACCUMULATION = FULL_BS // (LOCAL_BS * world_size * CTX)
 
     sampler = data.TextDirSampler(
-        datapath,
-        CTX + 1,
-        chr(bpe.SOH),
+        datapath, CTX + 1, bpe.unicode_for_special('<|SOH|>'),
         Compose([
-            data.RandomCase(chr(bpe.DC2),
-                            chr(bpe.DC3),
+            data.RandomCase(bpe.unicode_for_special('<|DC2|>'),
+                            bpe.unicode_for_special('<|DC3|>'),
                             uppercase_p=0.0,
                             lowercase_p=0.05),
-            #data.RandomPromptSplit(chr(bpe.STX), p=0.25),
-            data.Tokenize(bpe, chr(bpe.DC1), dropout=0.1, dropout_p=0.25)
+            data.RandomPromptSplit(bpe.unicode_for_special('<|STX|>'), p=0.05),
+            data.Tokenize(bpe,
+                          bpe.unicode_for_special('<|DC1|>'),
+                          dropout=0.1,
+                          dropout_p=0.05)
         ]))
 
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
@@ -117,7 +118,7 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
           'bs', LOCAL_BS, 'accum', ACCUMULATION)
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX,
-                             dropout=0.).to(rank)
+                             dropout=0.1).to(rank)
 
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,
@@ -139,6 +140,7 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         return {'loss': loss.item(), 'ppl': metrics.perplexity(loss).item()}
 
     def test_fun():
+        basem.eval()
         outs = [
             sample(basem, bpe, chr(bpe.SOH), CTX, num_tokens=CTX)
             for _ in range(10)
@@ -162,15 +164,24 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
             'ppl': metrics.perplexity(test_loss).item()
         }
 
-    optimizer = AdamW([{
-        'params': basem.decayable_parameters(),
-        'weight_decay': 0.01
-    }, {
-        'params': basem.undecayable_parameters(),
-        'weight_decay': 0.0
-    }],
-                      lr=lr,
-                      betas=(0.9, 0.99))
+    if True:
+        optimizer = AdamW([{
+            'params': params,
+            'lr': lr * (1 if fan_in == 1 else 1),
+            'weight_decay': 0.1 if decayable else 0.0
+        } for (decayable,
+               fan_in), params in basem.mu_parametrization().items()],
+                          betas=(0.9, 0.99))
+    else:
+        optimizer = AdamW([{
+            'params': basem.decayable_parameters(),
+            'weight_decay': 0.01,
+        }, {
+            'params': basem.undecayable_parameters(),
+            'weight_decay': 0.0
+        }],
+                          lr=lr,
+                          betas=(0.9, 0.99))
 
     recipe = tch.recipes.TrainAndCall(
         m,
@@ -179,8 +190,9 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         train_loader,
         log_every=10,
         test_every=1000,
-        checkpoint='model_' + model_size if rank == 0 else None,
-        visdom_env='mylm_' + model_size if rank == 0 else None)
+        checkpoint=f"model_{model_size}" if rank == 0 else None,
+        visdom_env=f'mylm_{model_size}-lr={lr}-reinit-fan_in'
+        if rank == 0 else None)
     recipe.callbacks.add_callbacks([
         tcb.LRSched(tch.lr_scheduler.CosineDecay(optimizer,
                                                  len(train_loader) * epochs,

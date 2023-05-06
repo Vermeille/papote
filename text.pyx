@@ -39,7 +39,7 @@ cdef class Text:
                 new_text.push_back(self.text[i])
         self.text = new_text
 
-    def merge(self, int t1, int t2, int new_token, float dropout=0.0) -> bool:
+    def merge(self, int t1, int t2, int new_token, float dropout=0.0) -> int:
         cdef int i
         cdef int j
         cdef int merged = 0
@@ -53,7 +53,7 @@ cdef class Text:
                 if not random() < dropout:
                     self.text[i] = new_token
                     self.text[j] = -1
-                    merged = 1
+                    merged += 1
             i = j
         return merged
 
@@ -116,9 +116,96 @@ cdef class Text:
             i = j
             j = Text.skip(i + 1, t, size)
 
-        return max_pair, pairs
+        return max_pair, {max_pair: max_count}
+
+    def unicode_private_to_token(self):
+        # https://en.wikipedia.org/wiki/Private_Use_Areas
+        # Find bytes of the form \xee\x80\x80 corresponding to code points of
+        # the form U+Exxx and replace them with a single token with value xxx
+
+        cdef int i
+        cdef int j
+        cdef int size = self.text.size()
+        cdef int* t = self.text.data()
+        cdef int token = 0
+        cdef int count = 0
+        for i in range(size):
+            if t[i] == 0xEE:
+                token = 0
+                token += t[i + 1] - 0x80
+                token <<= 6
+                token += t[i + 2] - 0x80
+                t[i] = token
+                t[i + 1] = -1
+                t[i + 2] = -1
+
+    def fast_tokenize(self, merges, float dropout=0.0):
+        cdef vector[vector[int]] token2index
+        cdef vector[int] pos2index
+
+        # populate token2index
+        cdef int i
+        cdef int j
+        cdef int size = self.text.size()
+        cdef int* t = self.text.data()
+        cdef int token
+        cdef int a
+        cdef int a_pos
+        cdef int b
+        cdef int b_pos
+        cdef int begin
+        cdef int end
+
+        token2index.resize(len(merges) + 1)
+        pos2index.resize(size)
+        for i in range(size):
+            token = t[i]
+            if token != -1:
+                pos2index[i] = token2index[token].size()
+                token2index[token].push_back(i)
+
+        # merge
+        for token, (a, b) in enumerate(merges):
+            if a == -1 or b == -1:
+                continue
+
+            i = 0
+            while i < token2index[a].size():
+                a_pos = token2index[a][i]
+                if a_pos == -1:
+                    i += 1
+                    continue
+                b_pos = a_pos + 1
+
+                while b_pos < size and t[b_pos] == -1:
+                    b_pos += 1
+                if b_pos >= size or t[b_pos] != b:
+                    i += 1
+                    continue
+
+                if not random() < dropout:
+                    # merge
+                    t[a_pos] = token
+                    t[b_pos] = -1
+                    # update token2index
+                    token2index[token].push_back(a_pos)
+                    if False:
+                        token2index[a].erase(token2index[a].begin() + i)
+                        for j in range(token2index[b].size()):
+                            if token2index[b][j] == b_pos:
+                                token2index[b].erase(token2index[b].begin() + j)
+                                break
+                    else:
+                        pos2index[a_pos] = token2index[token].size() - 1
+                        token2index[a][i] = -1
+                        token2index[b][pos2index[b_pos]] = -1
+                    i -= 1
+                i += 1
+
 
     def tokenize(self, merges, float dropout=0.0):
         for i, (a, b) in enumerate(merges):
-            self.merge(a, b, i+256, dropout)
+            if a == -1 or b == -1:
+                continue
+            self.merge(a, b, i, dropout)
 

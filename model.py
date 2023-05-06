@@ -14,6 +14,16 @@ class SquaredReLU(nn.Module):
         return F.relu(x, self.inplace).square_()
 
 
+class ZeroScale(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.scale = nn.Parameter(torch.zeros(1) + 1e-5)
+
+    def forward(self, x):
+        return x * self.scale
+
+
 class SelfAttention(nn.Module):
 
     def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
@@ -39,7 +49,7 @@ class SelfAttention(nn.Module):
             k,
             v,
             is_causal=True,
-            dropout_p=0 * self.dropout_rate if self.training else 0.0).float()
+            dropout_p=self.dropout_rate if self.training else 0.0).float()
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.dropout(self.fc(att))
@@ -73,10 +83,10 @@ class Transformer(nn.Module):
         super().__init__()
         self.context_size = context_size
         self.token_embedding = tu.normal_init(
-            nn.Embedding(num_tokens, hidden_size))
+            nn.Embedding(num_tokens, hidden_size), 0.02)
         self.positional_embedding = nn.Parameter(
             torch.randn(1, context_size, hidden_size) * 0.02)
-        self.ln = nn.LayerNorm(hidden_size)
+        self.layer_norm_in = nn.LayerNorm(hidden_size)
         self.dropout = nn.Dropout(dropout_rate)
 
         self.transformer_blocks = nn.ModuleList([
@@ -84,11 +94,11 @@ class Transformer(nn.Module):
             for _ in range(num_layers)
         ])
 
-        self.ln_out = nn.LayerNorm(hidden_size)
+        self.layer_norm_out = nn.LayerNorm(hidden_size)
         #self.projector = nn.Linear(hidden_size, hidden_size, bias=False)
 
-        self.fc = nn.Linear(hidden_size, num_tokens, bias=False)
-        self.fc.weight = self.token_embedding.weight
+        self.unembed = nn.Linear(hidden_size, num_tokens, bias=False)
+        self.unembed.weight = self.token_embedding.weight
 
         self.check_params()
         for m in self.modules():
@@ -123,20 +133,19 @@ class Transformer(nn.Module):
     def forward(self, inputs):
         outputs = self.token_embedding(
             inputs) + self.positional_embedding[:, :inputs.size(1)]
-        outputs = self.ln(outputs)
+        outputs = self.layer_norm_in(outputs)
         outputs = self.dropout(outputs)
 
         for transformer_block in self.transformer_blocks:
             outputs = transformer_block(outputs)
 
-        outputs = self.ln_out(outputs)
-        #outputs = self.projector(outputs)
-        logits = self.fc(outputs)
+        outputs = self.layer_norm_out(outputs)
+        logits = self.unembed(outputs)
         return logits
 
     def decayable_parameters(self):
         for mod in self.children():
-            if (mod is self.token_embedding or mod is self.fc):
+            if (mod is self.token_embedding or mod is self.unembed):
                 continue
             for p in mod.parameters():
                 yield p
@@ -144,6 +153,22 @@ class Transformer(nn.Module):
     def undecayable_parameters(self):
         yield self.positional_embedding
         yield self.token_embedding.weight
+
+    def mu_parametrization(self):
+        from collections import defaultdict
+        params = defaultdict(list)
+        for name, p in self.named_parameters():
+            if 'unembed' in name:
+                continue
+            decayable = not (len(p.size()) == 1 or 'embedding' in name)
+            if len(p.size()) >= 2:
+                size_in = (1 if 'embedding' in name else 2
+                           )  #p.view(p.size(0), -1).size(1))
+            else:
+                size_in = 1
+            print(name, decayable, size_in)
+            params[(decayable, size_in)].append(p)
+        return params
 
     def num_parameters(self):
         return sum(p.numel() for p in self.parameters())

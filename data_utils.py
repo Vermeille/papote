@@ -77,6 +77,9 @@ class RandomPromptSplit:
         self.split_token = split_token
 
     def __call__(self, text):
+        if len(text) < 2:
+            return text
+
         if random.uniform(0, 1) < self.p:
             split_point = random.randrange(0, len(text) - 1)
             text = text[:split_point] + self.split_token + text[split_point:]
@@ -122,7 +125,6 @@ class TextDirSampler:
 
     def _read_file(self, i):
         # find the file that contains the ith character
-        i = i * self.num_tokens
         idx = 0
         for sample in self.samples:
             if i < sample[1]:
@@ -141,11 +143,9 @@ class TextDirSampler:
         return self.transform(text)
 
     def __getitem__(self, i):
-        enc = self._read_file(i)
+        enc = self._read_file(i * self.num_tokens +
+                              random.randint(0, self.num_tokens))
         while len(enc) < self.num_tokens:
             enc += self._read_file(
-                random.choice([
-                    s[2] // self.num_tokens
-                    for s in [(0, 0, 0)] + self.samples[:-1]
-                ]))
+                random.choice([s[2] for s in [(0, 0, 0)] + self.samples[:-1]]))
         return torch.tensor(enc[:self.num_tokens], dtype=torch.long)
