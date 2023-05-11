@@ -88,7 +88,7 @@ class SelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_size = head_size
         self.dropout_rate = dropout_rate
-        self.qkv = tu.kaiming(
+        self.qkv = tu.xavier(
             nn.Linear(hidden_size, head_size * num_heads * 3, bias=False))
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
