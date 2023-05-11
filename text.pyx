@@ -116,7 +116,7 @@ cdef class Text:
             i = j
             j = Text.skip(i + 1, t, size)
 
-        return max_pair, {max_pair: max_count}
+        return max_pair, pairs
 
     def unicode_private_to_token(self):
         # https://en.wikipedia.org/wiki/Private_Use_Areas
