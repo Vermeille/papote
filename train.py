@@ -213,6 +213,7 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
     ])
+    recipe.register('bpe', bpe)
     recipe.to(rank)
     recipe.run(epochs)
 
