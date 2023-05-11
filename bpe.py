@@ -10,6 +10,15 @@ pyximport.install(setup_args={"script_args": ['--cython-cplus']})
 from text import Text
 
 
+def is_valid_merge(a, b):
+    token = a + b
+    special = b'.,;:?!()[]{}"<>|/@\\^$*+-=_~`#%&'
+    return (b[0] != ord(' ')
+            and (all(c not in token
+                     for c in special + b'\n') or all(c in (special + b' ')
+                                                      for c in token)))
+
+
 def chunks(lst, n):
     """Yield n successive chunks from lst."""
     chunk_size = (len(lst) + n - 1) // n
@@ -79,7 +88,7 @@ class BPE:
     @staticmethod
     def _learn_from_files(args):
         cnt = Counter()
-        filenames, merges = args
+        filenames, merges, vocab = args
         start_time = time.time()
         for filename in filenames:
             #print('starting', filename)
@@ -87,7 +96,11 @@ class BPE:
                 text = Text(f.read())
             text.fast_tokenize(merges)
             pairs = text.most_frequent_pair()[1]
-            cnt.update(pairs)
+
+            for merge, count in pairs.items():
+                if is_valid_merge(vocab[merge[0]], vocab[merge[1]]):
+                    cnt[merge] += count
+
         return dict(cnt.most_common(len(cnt) // 10))
 
     def learn(self,
@@ -104,25 +117,35 @@ class BPE:
         ]
         random.shuffle(files)
         with Pool(num_threads) as pool:
-            while len(vocab) < target_vocab_size:
+            while len(vocab) <= target_vocab_size:
                 start_time = time.time()
                 all_pairs = Counter()
                 for pairs in pool.imap_unordered(
                         self._learn_from_files,
-                    ((chunk, merges)
+                    ((chunk, merges, vocab)
                      for chunk in chunks([file
                                           for file in files], num_threads))):
                     all_pairs.update(pairs)
 
                 all_pairs = sorted(all_pairs.keys(),
                                    key=lambda x: all_pairs[x],
-                                   reverse=True)[:simultaneous_merges]
-                print(all_pairs)
+                                   reverse=True)
+                num_new_tokens = 0
                 for pair in all_pairs:
+                    if (num_new_tokens >= simultaneous_merges
+                            or len(vocab) > target_vocab_size):
+                        break
+                    print(len(merges),
+                          ' [',
+                          vocab[pair[0]].decode(errors='replace'),
+                          '::',
+                          vocab[pair[1]].decode(errors='replace'),
+                          ']',
+                          sep='')
                     merges.append(pair)
-                    print(len(vocab), vocab[merges[-1][0]],
-                          vocab[merges[-1][1]])
-                    vocab.append(vocab[merges[-1][0]] + vocab[merges[-1][1]])
+                    new_token = vocab[pair[0]] + vocab[pair[1]]
+                    vocab.append(new_token)
+                    num_new_tokens += 1
                 print('time:', time.time() - start_time)
         self.vocab = vocab
         self.merges = merges
