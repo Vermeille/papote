@@ -25,15 +25,19 @@ def sample(model,
            top_p=0.95,
            temperature=1.0,
            typical_p=None,
-           print_as_you_go=False,
-           sep=''):
+           callback_seed=None,
+           callback_stream=None):
     rank = next(model.parameters()).device
     model.eval()
     encoded = bpe.encode_text(seed)
-    if print_as_you_go:
-        print(bpe.decode_text(encoded, sep.encode()), end='', flush=True)
-    with torch.no_grad() and suppress(KeyboardInterrupt):
+    if callback_seed is not None:
+        callback_seed(encoded)
+    with suppress(KeyboardInterrupt):
         for _ in range(num_tokens):
+            t = Text('')
+            t.set_tokens(encoded)
+            t.tokenize(bpe.merges)
+            encoded = t.as_tokens()
             encoded_t = torch.tensor([encoded[-ctx_len:]],
                                      dtype=torch.long).to(rank)
             logits = model(encoded_t)[0][-1].cpu()
@@ -69,10 +73,8 @@ def sample(model,
             probs = F.softmax(logits, dim=-1)
             next_token = torch.multinomial(probs, 1).item()
             next_token = top_indices[next_token]
-            if print_as_you_go:
-                print(bpe.vocab[next_token].decode('utf-8', 'ignore'),
-                      end=sep,
-                      flush=True)
+            if callback_stream:
+                callback_stream(next_token)
             encoded.append(next_token)
         return bpe.decode_text(encoded, sep.encode())
 

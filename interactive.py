@@ -6,6 +6,24 @@ from model import Transformer, make_transformer
 from train import sample
 from types import SimpleNamespace
 
+
+class StreamPrinter:
+
+    def __init__(self, bpe, separator=''):
+        self.bpe = bpe
+        self.separator = separator
+
+    def print_seed(self, encoded):
+        print(self.bpe.decode_text(encoded, self.separator.encode()),
+              end=self.separator,
+              flush=True)
+
+    def print_stream(self, next_token):
+        print(self.bpe.vocab[next_token].decode('utf-8', 'ignore'),
+              end=self.separator,
+              flush=True)
+
+
 if __name__ == '__main__':
     # Load the BPE
     bpe = BPE.load('bpe.json')
@@ -17,13 +35,13 @@ if __name__ == '__main__':
         torch.load(sys.argv[1], map_location='cpu')['model'])
     model.eval()
 
-    opts = SimpleNamespace(
-        temperature=1.0,
-        top_k=50,
-        top_p=0.9,
-        typical_p=None,
-        sep='',
-    )
+    opts = SimpleNamespace(temperature=0.7,
+                           top_k=30,
+                           top_p=0.9,
+                           typical_p=None,
+                           sep='',
+                           length=CTX)
+    printer = StreamPrinter(bpe, opts.sep)
     # Sample from the model
     with torch.inference_mode():
         while True:
@@ -52,8 +70,12 @@ if __name__ == '__main__':
                     modelc.load_state_dict(
                         torch.load(args, map_location='cpu')['model'])
                 elif command == 'sep':
-                    opts.sep = args.strip()
-                    print('Separator set to', opts.sep)
+                    printer.separator = args.strip()
+                    opts.sep = printer.separator
+                    print('Separator set to', printer.separator)
+                elif command == 'length':
+                    opts.length = int(args)
+                    print('Length set to', opts.length)
                 continue
             out = sample(
                 model,
@@ -61,12 +83,11 @@ if __name__ == '__main__':
                 #chr(bpe.SOH) + text + chr(bpe.STX),
                 text,
                 CTX,
-                num_tokens=CTX,
+                num_tokens=opts.length,
                 top_k=opts.top_k,
                 top_p=opts.top_p,
                 temperature=opts.temperature,
                 typical_p=opts.typical_p,
-                print_as_you_go=True,
-                sep=opts.sep)
+                callback_seed=printer.print_seed,
+                callback_stream=printer.print_stream)
             print()
-            print(out)
