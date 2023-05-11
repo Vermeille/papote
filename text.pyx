@@ -130,14 +130,16 @@ cdef class Text:
         cdef int token = 0
         cdef int count = 0
         for i in range(size):
-            if t[i] == 0xEE:
-                token = 0
+            if t[i] == 0xEE or t[i] == 0xEF:
+                token = 0xE if t[i] == 0xEE else 0xF
+                token <<= 6
                 token += t[i + 1] - 0x80
                 token <<= 6
                 token += t[i + 2] - 0x80
-                t[i] = token
-                t[i + 1] = -1
-                t[i + 2] = -1
+                if token >= 0xE000 and token <= 0xF8FF:
+                    t[i] = token - 0xE000
+                    t[i + 1] = -1
+                    t[i + 2] = -1
 
     def fast_tokenize(self, merges, float dropout=0.0):
         cdef vector[vector[int]] token2index
