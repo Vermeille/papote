@@ -102,6 +102,12 @@ class Tokenize:
             return self.bpe.encode_text(text)
 
 
+def tokens_dropout(tokens, mask_id, dropout_p):
+    return torch.where(
+        torch.rand(*tokens.shape, device=tokens.device) < dropout_p, mask_id,
+        tokens)
+
+
 class TextDirSampler:
 
     def __init__(self, directory, num_tokens, start_of_file_token, transform):
@@ -149,3 +155,33 @@ class TextDirSampler:
             enc += self._read_file(
                 random.choice([s[2] for s in [(0, 0, 0)] + self.samples[:-1]]))
         return torch.tensor(enc[:self.num_tokens], dtype=torch.long)
+
+
+class Tagger:
+
+    def __init__(self, tag_file, max_tags=4, prefix=''):
+        self.max_tags = max_tags
+        self.path2tags = {}
+        with open(tag_file, 'r') as f:
+            for line in f:
+                path, *tags = line.split()
+                self.path2tags[prefix + path] = tags
+
+    def tags(self):
+        return set(t for path_tags in self.path2tags.values()
+                   for t in path_tags)
+
+    def tag_path(self, path):
+        tags = []
+        components = path.split('/')
+        while len(components) > 0:
+            tag = self.path2tags.get('/'.join(components))
+            if tag is not None:
+                tags += tag
+            components = components[:-1]
+
+        if self.max_tags is not None:
+            tags = tags[:self.max_tags]
+            tags = tags + ['<|NUL|>'] * (self.max_tags - len(tags))
+        random.shuffle(tags)
+        return ''.join(tags)
