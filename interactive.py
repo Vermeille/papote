@@ -26,14 +26,18 @@ class StreamPrinter:
 
 if __name__ == '__main__':
     # Load the BPE
-    bpe = BPE.load('bpe.json')
     CTX = 640
+    checkpoint = torch.load(sys.argv[1], map_location='cpu')
+
+    bpe = BPE()
+    bpe.load_state_dict(checkpoint['bpe'])
+
     # Load the model
     model = make_transformer('xxs', len(bpe.vocab), CTX)
     modelc = torch.compile(model)
-    modelc.load_state_dict(
-        torch.load(sys.argv[1], map_location='cpu')['model'])
+    modelc.load_state_dict(checkpoint['model'])
     model.eval()
+    del checkpoint
 
     opts = SimpleNamespace(temperature=0.7,
                            top_k=30,
