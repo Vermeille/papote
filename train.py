@@ -1,8 +1,8 @@
+import math
 import torch
 import torch.nn.functional as F
 import random
 import torchelie as tch
-from discordloader import discord_load
 from model import make_transformer
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
@@ -14,8 +14,10 @@ import os
 from contextlib import suppress
 import data_utils as data
 from torchvision.transforms import Compose
+import math
 
 
+@torch.no_grad()
 def sample(model,
            bpe,
            seed,
@@ -76,14 +78,37 @@ def sample(model,
             if callback_stream:
                 callback_stream(next_token)
             encoded.append(next_token)
-        return bpe.decode_text(encoded, sep.encode())
+        return bpe.decode_text(encoded)
+
+
+class ArcFace:
+
+    def __init__(self, margin_m=0.5):
+        self.m = margin_m
+
+        self.cos_m = math.cos(self.m)
+        self.sin_m = math.sin(self.m)
+        self.th = math.cos(math.pi - self.m)
+        self.mm = math.sin(math.pi - self.m) * self.m
+
+    def __call__(self, cosine, label):
+        sine = torch.sqrt(1.0 - torch.pow(cosine, 2))
+        phi = cosine * self.cos_m - sine * self.sin_m  # cos(theta + m)
+        phi = torch.where(cosine > self.th, phi, cosine - self.mm)
+        print(cosine.shape, label.shape)
+        one_hot = torch.zeros_like(cosine)
+        one_hot.scatter_(2,
+                         label.view(label.shape[0], label.shape[1], 1).long(),
+                         1)
+        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+        return output
 
 
 def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
           world_size):
     FULL_BS = 500_000
     LOCAL_BS = {
-        'xxs': 48,
+        'xxs': 36,
         'xs': 32,
         's': 16,
         'm': 8,
@@ -92,27 +117,27 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         'xxl': 1
     }[model_size]
     CTX = 640
-    ACCUMULATION = FULL_BS // (LOCAL_BS * world_size * CTX)
+    ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
 
     sampler = data.TextDirSampler(
         datapath, CTX + 1, bpe.unicode_for_special('<|SOH|>'),
         Compose([
-            data.RandomCase(bpe.unicode_for_special('<|DC2|>'),
-                            bpe.unicode_for_special('<|DC3|>'),
+            data.RandomCase(bpe.unicode_for_special('<|DC1|>'),
+                            bpe.unicode_for_special('<|DC2|>'),
                             uppercase_p=0.0,
-                            lowercase_p=0.05),
-            data.RandomPromptSplit(bpe.unicode_for_special('<|STX|>'), p=0.05),
+                            lowercase_p=0.00),
+            data.RandomPromptSplit(bpe.unicode_for_special('<|STX|>'), p=0.00),
             data.Tokenize(bpe,
-                          bpe.unicode_for_special('<|DC1|>'),
+                          bpe.unicode_for_special('<|DC3|>'),
                           dropout=0.1,
-                          dropout_p=0.05)
+                          dropout_p=0.00)
         ]))
 
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
     train_loader = DataLoader(sampler,
                               LOCAL_BS,
                               shuffle=True,
-                              num_workers=4,
+                              num_workers=16,
                               drop_last=True,
                               pin_memory=True,
                               persistent_workers=True)
@@ -120,7 +145,7 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
           'bs', LOCAL_BS, 'accum', ACCUMULATION)
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX,
-                             dropout=0.1).to(rank)
+                             dropout=0.).to(rank)
 
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,
@@ -128,19 +153,23 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
 
     m = torch.compile(basem)
     if pretrained is not None:
-        tch.utils.load_state_dict_forgiving(
-            m,
-            torch.load(pretrained, map_location='cpu')['model'])
+        weights = torch.load(pretrained, map_location='cpu')['model']
+        tch.utils.load_state_dict_forgiving(m, weights)
+        del weights
 
     if world_size > 1:
         m = DDP(m, device_ids=[rank], output_device=rank)
 
+    GRAD_SCALE = 100
+
     def train_fun(batch):
-        logits = m(batch[:, :-1])
+        with torch.autocast('cuda'):
+            logits = m(batch[:, :-1]).float()
         loss = F.cross_entropy(logits.transpose(2, 1), batch[:, 1:])
-        loss.backward()
+        (GRAD_SCALE * loss).backward()
         return {'loss': loss.item(), 'ppl': metrics.perplexity(loss).item()}
 
+    @torch.no_grad()
     def test_fun():
         basem.eval()
         outs = [
@@ -166,25 +195,14 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
             'ppl': metrics.perplexity(test_loss).item()
         }
 
-    if True:
-        optimizer = AdamW([{
-            'params': params,
-            'lr': lr * (1 if fan_in == 1 else 1),
-            'weight_decay': 0.1 if decayable else 0.0
-        } for (decayable,
-               fan_in), params in basem.mu_parametrization().items()],
-                          betas=(0.9, 0.99))
-    else:
-        optimizer = AdamW([{
-            'params': basem.decayable_parameters(),
-            'weight_decay': 0.01,
-        }, {
-            'params': basem.undecayable_parameters(),
-            'weight_decay': 0.0
-        }],
-                          lr=lr,
-                          betas=(0.9, 0.99))
-
+    # weight decay from Cramming paper: 0.01
+    # weight decay from LLaMA: 0.1
+    optimizer = AdamW([{
+        'params': params,
+        'lr': lr,
+        'weight_decay': 0.01 if decayable else 0.0
+    } for (decayable, fan_in), params in basem.mu_parametrization().items()],
+                      betas=(0.8, 0.98))
     recipe = tch.recipes.TrainAndCall(
         m,
         train_fun,
@@ -193,18 +211,21 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         log_every=10,
         test_every=1000,
         checkpoint=f"model_{model_size}" if rank == 0 else None,
-        visdom_env=f'mylm_{model_size}-lr={lr}-reinit-fan_in'
+        visdom_env=f'mylm_{model_size}-lr={lr}-reinit'
+        f'{"-finetune" if pretrained is not None else ""}'
         if rank == 0 else None)
     recipe.callbacks.add_callbacks([
-        tcb.LRSched(tch.lr_scheduler.CosineDecay(optimizer,
-                                                 len(train_loader) * epochs,
-                                                 0.05),
+        tcb.LRSched(tch.lr_scheduler.CosineDecay(
+            optimizer,
+            len(train_loader) * epochs,
+            warmup_ratio=0.0 if pretrained is None else 0),
                     metric=None,
                     step_each_batch=True),
         tcb.Optimizer(optimizer,
                       log_lr=True,
-                      clip_grad_norm=1,
-                      accumulation=ACCUMULATION),
+                      clip_grad_norm=2 * GRAD_SCALE,
+                      accumulation=ACCUMULATION,
+                      grad_multiplier=1),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
     ])

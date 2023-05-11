@@ -24,6 +24,63 @@ class ZeroScale(nn.Module):
         return x * self.scale
 
 
+class SinusoidalPositional(torch.nn.Module):
+    r"""Inject some information about the relative or absolute position of the tokens
+    in the sequence. The positional encodings have the same dimension as
+    the embeddings, so that the two can be summed. Here, we use sine and cosine
+    functions of different frequencies.
+    """
+
+    def __init__(self, embedding_dim, max_seq_length=5000):
+        super().__init__()
+
+        import math
+        pe = torch.zeros(max_seq_length, embedding_dim)
+        position = torch.arange(0, max_seq_length,
+                                dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, embedding_dim, 2).float() *
+            (-math.log(10000.0) / embedding_dim))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+        self.register_buffer("pe", pe, persistent=False)
+
+    def forward(self, input_ids):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+        return self.pe[:, :input_ids.shape[1], :]
+
+
+class ScaledSinosoidal(SinusoidalPositional):
+    """Sinusoidal with scaling (see FLASH paper)."""
+
+    def __init__(self, embedding_dim, max_seq_length):
+        super().__init__(embedding_dim, max_seq_length)
+        self.scale_factor = torch.nn.Parameter(
+            torch.tensor([1.0 / embedding_dim**0.5]))
+
+    def forward(self, input_ids):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+        return self.scale_factor * self.pe[:, :input_ids.shape[1], :]
+
+
 class SelfAttention(nn.Module):
 
     def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
@@ -35,7 +92,8 @@ class SelfAttention(nn.Module):
             nn.Linear(hidden_size, head_size * num_heads * 3, bias=False))
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
-        self.dropout = nn.Dropout(dropout_rate, True)
+        self.dropout = (nn.Dropout(dropout_rate, True)
+                        if dropout_rate > 0 else nn.Identity())
 
     def forward(self, x):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
@@ -55,6 +113,16 @@ class SelfAttention(nn.Module):
         return self.dropout(self.fc(att))
 
 
+class GEGLU(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x, gate = x.chunk(2, dim=-1)
+        return x * F.gelu(gate)
+
+
 class TransformerBlock(nn.Module):
 
     def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
@@ -63,14 +131,15 @@ class TransformerBlock(nn.Module):
         self.sa = SelfAttention(hidden_size, num_heads, head_size,
                                 dropout_rate)
         self.feed_forward = nn.Sequential(
-            tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False)),
-            nn.GELU(),
+            tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False), ),
+            GEGLU(),
             tu.constant_init(
-                nn.Linear(4 * hidden_size, hidden_size, bias=False), 0),
-            nn.Dropout(dropout_rate, True))
+                nn.Linear(2 * hidden_size, hidden_size, bias=False), 0.),
+            (nn.Dropout(dropout_rate, True)
+             if dropout_rate > 0 else nn.Identity()))
         self.layer_norm2 = nn.LayerNorm(hidden_size)
 
-    def forward(self, x):
+    def forward(self, x, pos=None):
         x = self.sa(self.layer_norm1(x)) + x
         x = self.feed_forward(self.layer_norm2(x)).add_(x)
         return x
@@ -82,12 +151,14 @@ class Transformer(nn.Module):
                  head_size, context_size, dropout_rate):
         super().__init__()
         self.context_size = context_size
-        self.token_embedding = tu.normal_init(
-            nn.Embedding(num_tokens, hidden_size), 0.02)
+        self.token_embedding = nn.Embedding(num_tokens, hidden_size)
         self.positional_embedding = nn.Parameter(
-            torch.randn(1, context_size, hidden_size) * 0.02)
+            torch.randn(1, context_size, hidden_size))
+        sin = ScaledSinosoidal(hidden_size, context_size)
+        self.positional_embedding.data = sin.scale_factor * sin.pe
         self.layer_norm_in = nn.LayerNorm(hidden_size)
-        self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = (nn.Dropout(dropout_rate)
+                        if dropout_rate > 0 else nn.Identity())
 
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(hidden_size, num_heads, head_size, dropout_rate)
@@ -95,17 +166,19 @@ class Transformer(nn.Module):
         ])
 
         self.layer_norm_out = nn.LayerNorm(hidden_size)
-        #self.projector = nn.Linear(hidden_size, hidden_size, bias=False)
 
         self.unembed = nn.Linear(hidden_size, num_tokens, bias=False)
-        self.unembed.weight = self.token_embedding.weight
+        with torch.no_grad():
+            nn.init.normal_(self.unembed.weight, 0, 1 / hidden_size**0.5)
+            nn.init.normal_(self.token_embedding.weight, 0,
+                            1 / hidden_size**0.5)
 
-        self.check_params()
+        #self.check_params()
         for m in self.modules():
             if isinstance(m, nn.LayerNorm):
                 m.bias.data.zero_()
                 m.weight.data.fill_(1.0)
-                m.eps = 1e-12
+                m.eps = 1e-6
 
     def check_params(self):
         from collections import Counter
@@ -131,13 +204,15 @@ class Transformer(nn.Module):
                    ) == 0, f'Duplicated undecayable parameters: {dup_undecay}'
 
     def forward(self, inputs):
-        outputs = self.token_embedding(
-            inputs) + self.positional_embedding[:, :inputs.size(1)]
+        # - all kinds of l2 norm were worse than none
+        # - all different ways to plug in positional embedding were worse
+        pos = self.positional_embedding[:, :inputs.size(1)]
+        outputs = self.token_embedding(inputs) + pos
         outputs = self.layer_norm_in(outputs)
         outputs = self.dropout(outputs)
 
         for transformer_block in self.transformer_blocks:
-            outputs = transformer_block(outputs)
+            outputs = transformer_block(outputs, pos)
 
         outputs = self.layer_norm_out(outputs)
         logits = self.unembed(outputs)
@@ -158,15 +233,13 @@ class Transformer(nn.Module):
         from collections import defaultdict
         params = defaultdict(list)
         for name, p in self.named_parameters():
-            if 'unembed' in name:
-                continue
+            #if 'unembed' in name: continue
             decayable = not (len(p.size()) == 1 or 'embedding' in name)
             if len(p.size()) >= 2:
                 size_in = (1 if 'embedding' in name else 2
                            )  #p.view(p.size(0), -1).size(1))
             else:
                 size_in = 1
-            print(name, decayable, size_in)
             params[(decayable, size_in)].append(p)
         return params
 
@@ -175,8 +248,8 @@ class Transformer(nn.Module):
 
     def num_parameters_without_embeddings(self):
         return (sum(p.numel() for p in self.parameters()) -
-                self.token_embedding.weight.numel() -
-                self.positional_embedding.numel())
+                self.token_embedding.weight.numel()
+                )  # - self.positional_embedding.numel())
 
 
 def make_transformer(size, vocab_size, context_len, dropout=0.1):
