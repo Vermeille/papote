@@ -115,7 +115,7 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         'l': 4,
         'xl': 2,
         'xxl': 1
-    }[model_size]
+    }[model_size] * 2
     CTX = 640
     ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
 
@@ -153,20 +153,29 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
 
     m = torch.compile(basem)
     if pretrained is not None:
-        weights = torch.load(pretrained, map_location='cpu')['model']
-        tch.utils.load_state_dict_forgiving(m, weights)
-        del weights
+        weights = torch.load(pretrained, map_location='cpu')
+        tch.utils.load_state_dict_forgiving(m, weights['model'])
 
     if world_size > 1:
         m = DDP(m, device_ids=[rank], output_device=rank)
 
-    GRAD_SCALE = 100
+    # weight decay from Cramming paper: 0.01
+    # weight decay from LLaMA: 0.1
+    # betas from LLaMA / nanoGPT
+    optimizer = AdamW([{
+        'params': params,
+        'lr': lr,
+        'weight_decay': 0.01 if decayable else 0.0
+    } for (decayable, fan_in), params in basem.mu_parametrization().items()],
+                      betas=(0.9, 0.95))
+
+    scaler = torch.cuda.amp.GradScaler()
 
     def train_fun(batch):
         with torch.autocast('cuda'):
             logits = m(batch[:, :-1]).float()
         loss = F.cross_entropy(logits.transpose(2, 1), batch[:, 1:])
-        (GRAD_SCALE * loss).backward()
+        scaler.scale(loss / ACCUMULATION).backward()
         return {'loss': loss.item(), 'ppl': metrics.perplexity(loss).item()}
 
     @torch.no_grad()
@@ -195,14 +204,6 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
             'ppl': metrics.perplexity(test_loss).item()
         }
 
-    # weight decay from Cramming paper: 0.01
-    # weight decay from LLaMA: 0.1
-    optimizer = AdamW([{
-        'params': params,
-        'lr': lr,
-        'weight_decay': 0.01 if decayable else 0.0
-    } for (decayable, fan_in), params in basem.mu_parametrization().items()],
-                      betas=(0.8, 0.98))
     recipe = tch.recipes.TrainAndCall(
         m,
         train_fun,
@@ -218,14 +219,15 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         tcb.LRSched(tch.lr_scheduler.CosineDecay(
             optimizer,
             len(train_loader) * epochs,
-            warmup_ratio=0.0 if pretrained is None else 0),
+            warmup_ratio=0.0 if pretrained is None else 0.05),
                     metric=None,
                     step_each_batch=True),
         tcb.Optimizer(optimizer,
                       log_lr=True,
-                      clip_grad_norm=2 * GRAD_SCALE,
+                      clip_grad_norm=2,
+                      scaler=scaler,
                       accumulation=ACCUMULATION,
-                      grad_multiplier=1),
+                      grad_multiplier=ACCUMULATION),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
     ])
