@@ -154,29 +154,37 @@ class BPE:
         return chr(self.specials[token] +
                    (0 if self.specials[token] < 256 else 0xE000))
 
+    def state_dict(self):
+        return {
+            'vocab': [v.decode('latin1') for v in self.vocab],
+            'merges': self.merges,
+            'specials': self.specials
+        }
+
     def save(self, filename):
         with open(filename, 'w') as f:
-            json.dump(
-                {
-                    'vocab': [v.decode('latin1') for v in self.vocab],
-                    'merges': self.merges,
-                    'specials': self.specials
-                }, f)
+            json.dump(self.state_dict(), f)
+
+    def load_state_dict(self, state_dict):
+        self.vocab = [v.encode('latin1') for v in state_dict['vocab']]
+        self.merges = state_dict['merges']
+        self.specials = state_dict['specials']
 
     @staticmethod
     def load(filename):
         with open(filename, 'r') as f:
             data = json.load(f)
         bpe = BPE()
-        bpe.vocab = [v.encode('latin1') for v in data['vocab']]
-        bpe.merges = data['merges']
-        bpe.specials = data['specials']
+        bpe.load_state_dict(data)
         return bpe
 
-    def add_special(self, special):
-        self.specials[special] = len(self.vocab)
-        self.vocab.append(special)
-        self.merges.append((-1, -1))
+    def add_special(self, special: str, idx=None):
+        if idx is None:
+            self.specials[special] = len(self.vocab)
+            self.vocab.append(special.encode())
+            self.merges.append((-1, -1))
+        else:
+            self.specials[special] = idx
 
     def process_special(self, txt):
         for special, idx in self.specials.items():
