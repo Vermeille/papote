@@ -39,7 +39,7 @@ class EvalDirSampler:
         self.samples = [
             text[i:i + num_tokens]
             for i in range(0,
-                           len(text) - num_tokens, num_tokens)
+                           len(text) - num_tokens, num_tokens // 2)
         ]
 
     def __len__(self):
