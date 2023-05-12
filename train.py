@@ -81,29 +81,6 @@ def sample(model,
         return bpe.decode_text(encoded)
 
 
-class ArcFace:
-
-    def __init__(self, margin_m=0.5):
-        self.m = margin_m
-
-        self.cos_m = math.cos(self.m)
-        self.sin_m = math.sin(self.m)
-        self.th = math.cos(math.pi - self.m)
-        self.mm = math.sin(math.pi - self.m) * self.m
-
-    def __call__(self, cosine, label):
-        sine = torch.sqrt(1.0 - torch.pow(cosine, 2))
-        phi = cosine * self.cos_m - sine * self.sin_m  # cos(theta + m)
-        phi = torch.where(cosine > self.th, phi, cosine - self.mm)
-        print(cosine.shape, label.shape)
-        one_hot = torch.zeros_like(cosine)
-        one_hot.scatter_(2,
-                         label.view(label.shape[0], label.shape[1], 1).long(),
-                         1)
-        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
-        return output
-
-
 def train(datapath, lr, epochs, model_size, pretrained, bpe_path, *, rank,
           world_size):
     FULL_BS = 500_000
