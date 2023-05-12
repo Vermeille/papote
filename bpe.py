@@ -86,6 +86,13 @@ class BPE:
             self.vocab[idx] = s.encode('utf-8')
 
     @staticmethod
+    def is_merge_conflicting(this_merge, previous_merges):
+        for merge in previous_merges:
+            if merge[1] == this_merge[0] or merge[0] == this_merge[1]:
+                return True
+        return False
+
+    @staticmethod
     def _learn_from_files(args):
         cnt = Counter()
         filenames, merges, vocab = args
@@ -135,6 +142,10 @@ class BPE:
                     if (num_new_tokens >= simultaneous_merges
                             or len(vocab) > target_vocab_size):
                         break
+                    if self.is_merge_conflicting(
+                            pair, merges[len(merges) - num_new_tokens:]):
+                        print('conflict', vocab[pair[0]], '::', vocab[pair[1]])
+                        continue
                     print(len(merges),
                           ' [',
                           vocab[pair[0]].decode(errors='replace'),
