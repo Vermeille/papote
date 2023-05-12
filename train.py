@@ -42,7 +42,7 @@ def sample(model,
             encoded = t.as_tokens()
             encoded_t = torch.tensor([encoded[-ctx_len:]],
                                      dtype=torch.long).to(rank)
-            logits = model(encoded_t)[0][-1].cpu()
+            logits = model(encoded_t)[0][-1].float().cpu()
             logits[torch.tensor([bpe.STX, bpe.DC1, bpe.DC2,
                                  bpe.DC3])] = -float('inf')
             logits = logits / temperature
@@ -104,12 +104,12 @@ class ArcFace:
         return output
 
 
-def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
+def train(datapath, lr, epochs, model_size, pretrained, bpe_path, *, rank,
           world_size):
     FULL_BS = 500_000
     LOCAL_BS = {
-        'xxs': 36,
-        'xs': 32,
+        'xxs': 32,
+        'xs': 24,
         's': 16,
         'm': 8,
         'l': 4,
@@ -118,6 +118,17 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
     }[model_size] * 2
     CTX = 640
     ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
+
+    if pretrained is not None:
+        checkpoint = torch.load(pretrained, map_location='cpu')
+
+    if bpe_path is not None:
+        print('loading BPE from', bpe_path)
+        bpe = BPE.load(bpe_path)
+    else:
+        print('Using BPE from checkpoint')
+        bpe = BPE()
+        bpe.load_state_dict(checkpoint['bpe'])
 
     sampler = data.TextDirSampler(
         datapath, CTX + 1, bpe.unicode_for_special('<|SOH|>'),
@@ -153,8 +164,26 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
 
     m = torch.compile(basem)
     if pretrained is not None:
-        weights = torch.load(pretrained, map_location='cpu')
-        tch.utils.load_state_dict_forgiving(m, weights['model'])
+        tch.utils.load_state_dict_forgiving(m,
+                                            checkpoint['model'],
+                                            fit_dst_size=True)
+
+        ckpt_ctx = checkpoint['model']['_orig_mod.positional_embedding'].shape[
+            1]
+        m.positional_embedding.data[:, :min(CTX, ckpt_ctx)] = checkpoint[
+            'model']['_orig_mod.positional_embedding'][:, :min(CTX, ckpt_ctx)]
+
+        ckpt_vocab_size = checkpoint['model'][
+            '_orig_mod.token_embedding.weight'].shape[0]
+        m.token_embedding.weight.data[:min(
+            len(bpe.vocab), ckpt_vocab_size
+        )] = checkpoint['model']['_orig_mod.token_embedding.weight'][:min(
+            len(bpe.vocab), ckpt_vocab_size)]
+
+        m.unembed.weight.data[:min(len(bpe.vocab), ckpt_vocab_size
+                                   )] = checkpoint['model'][
+                                       '_orig_mod.unembed.weight'][:min(
+                                           len(bpe.vocab), ckpt_vocab_size)]
 
     if world_size > 1:
         m = DDP(m, device_ids=[rank], output_device=rank)
@@ -174,26 +203,39 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
     def train_fun(batch):
         with torch.autocast('cuda'):
             logits = m(batch[:, :-1]).float()
-        loss = F.cross_entropy(logits.transpose(2, 1), batch[:, 1:])
-        scaler.scale(loss / ACCUMULATION).backward()
-        return {'loss': loss.item(), 'ppl': metrics.perplexity(loss).item()}
+        loss = F.cross_entropy(logits.transpose(2, 1),
+                               batch[:, 1:],
+                               reduction='none')
+        scaler.scale(loss.mean() / ACCUMULATION).backward()
+        loss_per_char = torch.mean(
+            loss.sum(dim=1).cpu() /
+            torch.tensor([len(bpe.decode_text(x)) for x in batch.cpu()]))
+        return {
+            'loss': loss_per_char.item(),
+            'ppl': metrics.perplexity(loss_per_char).item()
+        }
 
     @torch.no_grad()
     def test_fun():
         basem.eval()
-        outs = [
-            sample(basem, bpe, chr(bpe.SOH), CTX, num_tokens=CTX)
-            for _ in range(10)
-        ]
+        with torch.autocast('cuda'):
+            outs = [
+                sample(basem, bpe, chr(bpe.SOH), CTX, num_tokens=CTX)
+                for _ in range(10)
+            ]
 
         for out in outs:
             print('-', out)
 
         test_loss = 0
         for x in test_sampler:
-            x = x.to(rank)
-            logits = m(x[None, :-1])
-            loss = F.cross_entropy(logits.transpose(2, 1), x[None, 1:])
+            xgpu = x.to(rank)
+            with torch.autocast('cuda'):
+                logits = m(xgpu[None, :-1]).float()
+            loss = F.cross_entropy(logits.transpose(2, 1), xgpu[None, 1:])
+            # get loss per char to account for different tokenizations
+            loss *= x.shape[0] / len(bpe.decode_text(x))
+            del xgpu
             test_loss += loss
         test_loss /= len(test_sampler)
 
@@ -212,14 +254,14 @@ def train(bpe: BPE, datapath, lr, epochs, model_size, pretrained, *, rank,
         log_every=10,
         test_every=1000,
         checkpoint=f"model_{model_size}" if rank == 0 else None,
-        visdom_env=f'mylm_{model_size}-lr={lr}-reinit'
+        visdom_env=f'mylm_{model_size}-lr={lr}'
         f'{"-finetune" if pretrained is not None else ""}'
         if rank == 0 else None)
     recipe.callbacks.add_callbacks([
         tcb.LRSched(tch.lr_scheduler.CosineDecay(
             optimizer,
             len(train_loader) * epochs,
-            warmup_ratio=0.0 if pretrained is None else 0.05),
+            warmup_ratio=0.05 if pretrained is None else 0.0),
                     metric=None,
                     step_each_batch=True),
         tcb.Optimizer(optimizer,
@@ -248,16 +290,18 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--model', default='xxs')
     parser.add_argument('--pretrained')
+    parser.add_argument('--bpe')
     args = parser.parse_args()
 
-    bpe = BPE.load('bpe.json')
+    if not args.bpe and not args.pretrained:
+        raise ValueError('Either --bpe or --pretrained must be specified')
 
     tch.utils.parallel_run(
         train,
-        bpe,
         'data/',
         args.lr,
         args.epochs,
         args.model,
         args.pretrained,
+        args.bpe,
     )

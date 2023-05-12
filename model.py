@@ -155,7 +155,7 @@ class Transformer(nn.Module):
         self.positional_embedding = nn.Parameter(
             torch.randn(1, context_size, hidden_size))
         sin = ScaledSinosoidal(hidden_size, context_size)
-        self.positional_embedding.data = sin.scale_factor * sin.pe
+        self.positional_embedding.data = 0.02 * sin.pe
         self.layer_norm_in = nn.LayerNorm(hidden_size)
         self.dropout = (nn.Dropout(dropout_rate)
                         if dropout_rate > 0 else nn.Identity())
@@ -169,9 +169,8 @@ class Transformer(nn.Module):
 
         self.unembed = nn.Linear(hidden_size, num_tokens, bias=False)
         with torch.no_grad():
-            nn.init.normal_(self.unembed.weight, 0, 1 / hidden_size**0.5)
-            nn.init.normal_(self.token_embedding.weight, 0,
-                            1 / hidden_size**0.5)
+            nn.init.normal_(self.token_embedding.weight, 0, 0.02)
+            nn.init.normal_(self.unembed.weight, 0, 1 / hidden_size)
 
         #self.check_params()
         for m in self.modules():
