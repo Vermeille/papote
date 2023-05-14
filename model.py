@@ -247,11 +247,42 @@ class Transformer(nn.Module):
 
     def num_parameters_without_embeddings(self):
         return (sum(p.numel() for p in self.parameters()) -
-                self.token_embedding.weight.numel()
-                )  # - self.positional_embedding.numel())
+                self.token_embedding.weight.numel() -
+                self.positional_embedding.numel() -
+                self.unembed.weight.numel())
 
 
 def make_transformer(size, vocab_size, context_len, dropout=0.1):
+    """
+    For a vocab size of 4096 and a context of 512:
+    xxxs
+        6.953984 M params
+        4.72576 M params without embeddings
+    xxs
+        12.200448 M params
+        8.858112 M params without embeddings
+    xs
+        25.4464 M params
+        20.989952 M params without embeddings
+    s
+        77.503488 M params
+        70.818816 M params without embeddings
+    m
+        260.673536 M params
+        251.76064 M params without embeddings
+    l
+        579.753984 M params
+        566.38464 M params without embeddings
+    xl
+        1024.663552 M params
+        1006.83776 M params without embeddings
+    xxl
+        2119.77216 M params
+        2097.48992 M params without embeddings
+    xxxl
+        5404.901376 M params
+        5369.249792 M params without embeddings
+    """
     if size == 'xxxs':
         return Transformer(vocab_size,
                            hidden_size=256,
