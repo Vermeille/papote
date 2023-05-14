@@ -81,19 +81,11 @@ def sample(model,
         return bpe.decode_text(encoded)
 
 
-def train(datapath, lr, epochs, model_size, pretrained, bpe_path, *, rank,
-          world_size):
+def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
+          *, rank, world_size):
     FULL_BS = 500_000
-    LOCAL_BS = {
-        'xxs': 32,
-        'xs': 24,
-        's': 16,
-        'm': 8,
-        'l': 4,
-        'xl': 2,
-        'xxl': 1
-    }[model_size] * 2
-    CTX = 640
+    LOCAL_BS = batch_size
+    CTX = 512
     ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
 
     if pretrained is not None:
@@ -268,6 +260,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', default='xxs')
     parser.add_argument('--pretrained')
     parser.add_argument('--bpe')
+    parser.add_argument('--batch-size', type=int, default=32)
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
@@ -281,4 +274,5 @@ if __name__ == '__main__':
         args.model,
         args.pretrained,
         args.bpe,
+        args.batch_size,
     )
