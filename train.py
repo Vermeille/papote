@@ -45,6 +45,12 @@ def sample(model,
             logits = model(encoded_t)[0][-1].float().cpu()
             logits[torch.tensor([bpe.STX, bpe.DC1, bpe.DC2,
                                  bpe.DC3])] = -float('inf')
+            # repetition penalty
+            counts = torch.bincount(encoded_t[0][-32:],
+                                    minlength=logits.shape[-1])
+            counts = 0.95**counts.float()
+            logits = logits * counts
+
             logits = logits / temperature
 
             #top k sampling
