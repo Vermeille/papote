@@ -96,7 +96,6 @@ class BPE:
     def _learn_from_files(args):
         cnt = Counter()
         filenames, merges, vocab = args
-        start_time = time.time()
         for filename in filenames:
             #print('starting', filename)
             with open(filename, 'r', errors='ignore') as f:

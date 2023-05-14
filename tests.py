@@ -28,11 +28,7 @@ def test_special_tokens():
     print(bpe.encode_text('a<|ZOB|>b'))
 
 
-if __name__ == '__main__':
-    #test_sampler()
-    #test_bpe_dropout()
-    #test_special_tokens()
-
+def test_random_augmentations():
     import data_utils as data
     from torchvision.transforms import Compose
     bpe = BPE.load('bpe.json')
@@ -52,3 +48,11 @@ if __name__ == '__main__':
 
     for i in range(10):
         print(repr(bpe.decode_text(sampler[i], b',')))
+
+
+if __name__ == '__main__':
+    #test_sampler()
+    #test_bpe_dropout()
+    #test_special_tokens()
+    #test_random_augmentations()
+    pass
