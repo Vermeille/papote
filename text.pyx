@@ -18,6 +18,12 @@ cdef class Text:
     def __init__(self, text):
         self.text = text.encode('utf-8')
 
+    @staticmethod
+    def from_bytes(text: bytes):
+        t = Text('')
+        t.text = text
+        return t
+
     def _as_tokens(self):
         return self.text
 
