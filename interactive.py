@@ -26,8 +26,8 @@ class StreamPrinter:
 
 if __name__ == '__main__':
     # Load the BPE
-    CTX = 640
     checkpoint = torch.load(sys.argv[1], map_location='cpu')
+    CTX = checkpoint['model']['_orig_mod.positional_embedding'].shape[1]
 
     bpe = BPE()
     bpe.load_state_dict(checkpoint['bpe'])
