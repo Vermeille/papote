@@ -252,6 +252,25 @@ class Transformer(nn.Module):
                 self.unembed.weight.numel())
 
 
+def transformer_from_checkpoint(checkpoint):
+    embedding_to_size = {
+        256: 'xxxs',
+        384: 'xxs',
+        512: 'xs',
+        768: 's',
+        1024: 'm',
+        1536: 'l',
+        2560: 'xl',
+        4096: 'xxl',
+    }
+    return make_transformer(
+        embedding_to_size[
+            checkpoint['_orig_mod.token_embedding.weight'].shape[1]],
+        checkpoint['_orig_mod.token_embedding.weight'].shape[0],
+        checkpoint['_orig_mod.positional_embedding'].shape[1],
+        checkpoint.get('_orig_mod.dropout.p', 0))
+
+
 def make_transformer(size, vocab_size, context_len, dropout=0.1):
     """
     For a vocab size of 4096 and a context of 512:
