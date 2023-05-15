@@ -29,7 +29,8 @@ class CumulativeRepetitionPenalty:
 
     def __call__(self, logits, idx, prompt):
         counts = torch.bincount(prompt[-self.window:],
-                                minlength=logits.shape[-1])
+                                minlength=max(idx.max(), prompt.max()) + 1)
+        counts = torch.gather(counts, 0, idx)
         counts = self.penalty**counts.float()
         return logits * counts, idx
 
@@ -42,7 +43,8 @@ class FixedRepetitionPenalty:
 
     def __call__(self, logits, idx, prompt):
         counts = torch.bincount(prompt[-self.window:],
-                                minlength=logits.shape[-1])
+                                minlength=max(idx.max(), prompt.max()) + 1)
+        counts = torch.gather(counts, 0, idx)
         return logits * torch.where(counts > 1, self.penalty, 1.0), idx
 
 

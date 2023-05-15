@@ -66,7 +66,7 @@ if __name__ == '__main__':
             print(opts.__dict__)
             text = input('>>> ')
             if not text:
-                break
+                continue
             text = text.replace('\\n', '\n')
 
             if text.startswith('!'):
