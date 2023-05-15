@@ -163,6 +163,7 @@ cdef class Text:
         cdef int b_pos
         cdef int begin
         cdef int end
+        cdef int use_dropout = 1 if dropout > 0.0 else 0
 
         token2index.resize(len(merges) + 1)
         pos2index.resize(size)
@@ -191,22 +192,15 @@ cdef class Text:
                     i += 1
                     continue
 
-                if not random() < dropout:
+                if use_dropout and not random() < dropout:
                     # merge
                     t[a_pos] = token
                     t[b_pos] = -1
                     # update token2index
                     token2index[token].push_back(a_pos)
-                    if False:
-                        token2index[a].erase(token2index[a].begin() + i)
-                        for j in range(token2index[b].size()):
-                            if token2index[b][j] == b_pos:
-                                token2index[b].erase(token2index[b].begin() + j)
-                                break
-                    else:
-                        pos2index[a_pos] = token2index[token].size() - 1
-                        token2index[a][i] = -1
-                        token2index[b][pos2index[b_pos]] = -1
+                    pos2index[a_pos] = token2index[token].size() - 1
+                    token2index[a][i] = -1
+                    token2index[b][pos2index[b_pos]] = -1
                     i -= 1
                 i += 1
 
