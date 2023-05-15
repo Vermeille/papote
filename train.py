@@ -29,6 +29,8 @@ def sample(model,
            typical_p=None,
            callback_seed=None,
            callback_stream=None):
+    from sampler import (ForbiddenTokens, FixedRepetitionPenalty, TopK, TopP,
+                         Temperature, Typical)
     rank = next(model.parameters()).device
     model.eval()
     encoded = bpe.encode_text(seed)
@@ -40,47 +42,28 @@ def sample(model,
             t.set_tokens(encoded)
             t.tokenize(bpe.merges)
             encoded = t.as_tokens()
-            encoded_t = torch.tensor([encoded[-ctx_len:]],
-                                     dtype=torch.long).to(rank)
-            logits = model(encoded_t)[0][-1].float().cpu()
-            logits[torch.tensor([bpe.STX, bpe.DC1, bpe.DC2,
-                                 bpe.DC3])] = -float('inf')
-            # repetition penalty
-            counts = torch.bincount(encoded_t[0][-32:],
-                                    minlength=logits.shape[-1])
-            counts = 0.95**counts.float()
-            logits = logits * counts
+            prompt = torch.tensor(encoded[-ctx_len:], dtype=torch.long)
 
-            logits = logits / temperature
+            logits = model(prompt[None].to(rank))[0][-1].float().cpu()
+            idx = torch.arange(logits.shape[-1])
+            logits, idx = ForbiddenTokens([bpe.STX, bpe.DC1, bpe.DC2,
+                                           bpe.DC3])(logits, idx, prompt)
+            #logits, idx = FixedRepetitionPenalty()(logits, idx, prompt)
 
             #top k sampling
-            top_indices = torch.topk(logits, min(top_k, logits.shape[-1]))[1]
-            logits = logits[top_indices]
+            logits, idx = TopK(top_k)(logits, idx, prompt)
 
             #top p sampling
-            probs = F.softmax(logits, dim=-1)
-            cumulative_probs = torch.cumsum(probs, dim=-1)
-            cumulative_probs[0] = 0
-            logits = logits[cumulative_probs < top_p]
-            top_indices = top_indices[cumulative_probs < top_p]
+            logits, idx = TopP(top_p)(logits, idx, prompt)
 
             # typical sampling
             if typical_p is not None:
-                normalized = F.log_softmax(logits, dim=-1)
-                entropy = -torch.sum(normalized.exp() * normalized, dim=-1)
-                shifted = torch.abs(-normalized - entropy)
-                typical_sorted = torch.argsort(shifted, dim=-1)
-                top_indices = top_indices[typical_sorted]
-                typical_probs = F.softmax(logits[typical_sorted],
-                                          dim=-1).cumsum(dim=-1)
-
-                typical_probs[0] = 0
-                typical_sorted = typical_sorted[typical_probs < typical_p]
-                logits = logits[typical_sorted]
+                logits, idx = Typical(typical_p)(logits, idx, prompt)
+            logits, idx = Temperature(temperature)(logits, idx, prompt)
 
             probs = F.softmax(logits, dim=-1)
             next_token = torch.multinomial(probs, 1).item()
-            next_token = top_indices[next_token]
+            next_token = idx[next_token]
             if callback_stream:
                 callback_stream(next_token)
             encoded.append(next_token)

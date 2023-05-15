@@ -2,26 +2,39 @@ import readline
 import torch
 import sys
 from bpe import BPE
-from model import Transformer, make_transformer
+from model import Transformer, transformer_from_checkpoint
 from train import sample
 from types import SimpleNamespace
+import sampler as S
 
 
-class StreamPrinter:
+class Printer:
 
     def __init__(self, bpe, separator=''):
         self.bpe = bpe
         self.separator = separator
 
-    def print_seed(self, encoded):
-        print(self.bpe.decode_text(encoded, self.separator.encode()),
-              end=self.separator,
-              flush=True)
+    def __call__(self, prompt, next_token):
+        if not next_token:
+            print(self.bpe.decode_text(prompt, self.separator.encode()),
+                  end=self.separator,
+                  flush=True)
+        else:
+            print(self.bpe.vocab[next_token].decode('utf-8', 'ignore'),
+                  end=self.separator,
+                  flush=True)
 
-    def print_stream(self, next_token):
-        print(self.bpe.vocab[next_token].decode('utf-8', 'ignore'),
-              end=self.separator,
-              flush=True)
+
+def build_sampler(model, bpe, opts):
+    return S.Sampler(model,
+                     bpe,
+                     logits_policy=S.LogitsComposite(
+                         S.TopK(opts.top_k), S.TopP(opts.top_p),
+                         S.FixedRepetitionPenalty(0.8, 32),
+                         S.Typical(opts.typical_p),
+                         S.Temperature(opts.temperature)),
+                     stopping_criterion=S.StopTooLong(opts.length),
+                     event_handler=Printer(bpe, opts.sep))
 
 
 if __name__ == '__main__':
@@ -45,14 +58,16 @@ if __name__ == '__main__':
                            typical_p=None,
                            sep='',
                            length=CTX)
-    printer = StreamPrinter(bpe, opts.sep)
+
+    sampler = build_sampler(model, bpe, opts)
     # Sample from the model
     with torch.inference_mode():
         while True:
             print(opts.__dict__)
-            text = input('>>> ').replace('\\n', '\n')
+            text = input('>>> ')
             if not text:
                 break
+            text = text.replace('\\n', '\n')
 
             if text.startswith('!'):
                 command, args = text[1:].split(' ', 1)
@@ -74,24 +89,13 @@ if __name__ == '__main__':
                     modelc.load_state_dict(
                         torch.load(args, map_location='cpu')['model'])
                 elif command == 'sep':
-                    printer.separator = args.strip()
-                    opts.sep = printer.separator
-                    print('Separator set to', printer.separator)
+                    opts.sep = args.strip()
+                    print('Separator set to', opts.sep)
                 elif command == 'length':
                     opts.length = int(args)
                     print('Length set to', opts.length)
+                sampler = build_sampler(model, bpe, opts)
                 continue
-            out = sample(
-                model,
-                bpe,
-                #chr(bpe.SOH) + text + chr(bpe.STX),
-                text,
-                CTX,
-                num_tokens=opts.length,
-                top_k=opts.top_k,
-                top_p=opts.top_p,
-                temperature=opts.temperature,
-                typical_p=opts.typical_p,
-                callback_seed=printer.print_seed,
-                callback_stream=printer.print_stream)
+
+            out = sampler.sample(text)
             print()
