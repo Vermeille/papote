@@ -143,7 +143,13 @@ class BPE:
                         break
                     if self.is_merge_conflicting(
                             pair, merges[len(merges) - num_new_tokens:]):
-                        print('conflict', vocab[pair[0]], '::', vocab[pair[1]])
+                        print('conflict:',
+                              ' [',
+                              vocab[pair[0]].decode(errors='replace'),
+                              '::',
+                              vocab[pair[1]].decode(errors='replace'),
+                              ']',
+                              sep='')
                         continue
                     print(len(merges),
                           ' [',
