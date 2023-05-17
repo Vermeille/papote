@@ -6,6 +6,17 @@ import json
 from multiprocessing import Pool
 import pyximport
 
+
+class NormalizeHyphens:
+
+    def __call__(self, text):
+        return text.replace('—', '-')
+
+
+def normalize_text(text):
+    return NormalizeHyphens()(text)
+
+
 pyximport.install(setup_args={"script_args": ['--cython-cplus']})
 from text import Text
 
@@ -99,7 +110,7 @@ class BPE:
         for filename in filenames:
             #print('starting', filename)
             with open(filename, 'r', errors='ignore') as f:
-                text = Text(f.read())
+                text = Text(normalize_text(f.read()))
             text.fast_tokenize(merges)
             pairs = text.most_frequent_pair()[1]
 

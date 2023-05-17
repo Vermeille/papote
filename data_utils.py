@@ -1,6 +1,6 @@
 import torch
 import random
-from bpe import BPE, Text
+from bpe import BPE, Text, normalize_text
 import os
 
 

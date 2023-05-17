@@ -8,7 +8,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchelie.callbacks as tcb
-from bpe import BPE, Text
+from bpe import BPE, Text, normalize_text
 import metrics
 import os
 from contextlib import suppress
