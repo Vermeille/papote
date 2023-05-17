@@ -192,7 +192,7 @@ cdef class Text:
                     i += 1
                     continue
 
-                if use_dropout and not random() < dropout:
+                if not use_dropout or not random() < dropout:
                     # merge
                     t[a_pos] = token
                     t[b_pos] = -1
