@@ -24,7 +24,7 @@ from text import Text
 def is_valid_merge(a, b):
     token = a + b
     special = b'.,;:?!()[]{}"<>|/@\\^$*+-=_~`#%&'
-    return (b[0] != ord(' ')
+    return ((b[0] != ord(' ') or all(c == ord(' ') for c in a))
             and (all(c not in token
                      for c in special + b'\n') or all(c in (special + b' ')
                                                       for c in token)))
