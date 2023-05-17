@@ -16,12 +16,20 @@ if __name__ == '__main__':
         bpe = BPE.load(args.path)
     else:
         bpe = BPE()
+    if False:
+        bpe.learn('data',
+                  target_vocab_size=args.vocab_size,
+                  simultaneous_merges=10,
+                  num_threads=16)
+        test.tokenize(bpe.merges)
+
+        print(test.as_str_tokens(bpe.vocab))
+        bpe.save(args.path)
+        print('ok')
+    bpe = ThinBPE(bpe)
     bpe.learn('data',
               target_vocab_size=args.vocab_size,
               simultaneous_merges=10,
-              num_threads=16)
-    test.tokenize(bpe.merges)
-
-    print(test.as_str_tokens(bpe.vocab))
+              num_threads=16,
+              min_count=1000)
     bpe.save(args.path)
-    print('ok')
