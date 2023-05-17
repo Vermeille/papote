@@ -96,6 +96,9 @@ class BPE:
         for s, idx in self.specials.items():
             self.vocab[idx] = s.encode('utf-8')
 
+    def __len__(self):
+        return len(self.vocab)
+
     @staticmethod
     def is_merge_conflicting(this_merge, previous_merges):
         for merge in previous_merges:
@@ -150,7 +153,7 @@ class BPE:
                 num_new_tokens = 0
                 for pair in all_pairs:
                     if (num_new_tokens >= simultaneous_merges
-                            or len(vocab) > target_vocab_size):
+                            or len(vocab) >= target_vocab_size):
                         break
                     if self.is_merge_conflicting(
                             pair, merges[len(merges) - num_new_tokens:]):
@@ -241,3 +244,107 @@ class BPE:
 
     def decode_text(self, encoded, separator=b''):
         return separator.join(self.decode(encoded)).decode('utf-8', 'replace')
+
+
+class ThinBPE:
+
+    def __init__(self, bpe: BPE):
+        self.bpe = bpe
+        self.from_bpe = []
+        self.to_bpe = []
+
+    @staticmethod
+    def _count_in_file(args):
+        cnt = Counter()
+        filenames, merges = args
+        for filename in filenames:
+            #print('starting', filename)
+            with open(filename, 'r', errors='ignore') as f:
+                text = Text(f.read())
+            text.fast_tokenize(merges)
+            cnt.update(Counter(text.as_tokens()))
+
+        return dict(cnt.most_common(len(cnt)))
+
+    def clean(self, directory, min_count=200, num_threads=8):
+        files = [
+            os.path.join(root, file)
+            for root, dirs, files in os.walk(directory) for file in files
+        ]
+        random.shuffle(files)
+        with Pool(num_threads) as pool:
+            start_time = time.time()
+            all_counts = Counter()
+            for counts in pool.imap_unordered(
+                    self._count_in_file,
+                ((chunk, self.bpe.merges)
+                 for chunk in chunks([file for file in files], num_threads))):
+                all_counts.update(counts)
+
+        dead_tokens = {
+            i
+            for i in range(len(self.bpe.vocab))
+            if all_counts[i] <= min_count and i >= 256
+        }
+        return dead_tokens
+
+    def learn(self,
+              directory,
+              target_vocab_size=1000,
+              simultaneous_merges=1,
+              min_count=200,
+              num_threads=8):
+        dead_tokens = self.clean(directory, min_count, num_threads)
+        while len(self.bpe.vocab) - len(dead_tokens) < target_vocab_size:
+            print('#tokens:', len(self.bpe.vocab), '#dead:', len(dead_tokens),
+                  ', learning',
+                  target_vocab_size - len(self.bpe.vocab) + len(dead_tokens),
+                  'new tokens')
+            self.bpe.learn(directory, target_vocab_size + len(dead_tokens),
+                           simultaneous_merges, num_threads)
+            dead_tokens = self.clean(directory, min_count, num_threads)
+        self.dead_tokens = dead_tokens
+
+    def gen_mapping(self):
+        self.from_bpe = []
+        self.to_bpe = []
+        i = 0
+        for idx, token in enumerate(self.bpe.vocab):
+            if idx not in self.dead_tokens:
+                self.to_bpe.append(idx)
+                self.from_bpe.append(i)
+                i += 1
+            else:
+                self.from_bpe.append(-1)
+
+    def __len__(self):
+        return len(self.to_bpe)
+
+    def save(self, filename):
+        state = self.bpe.state_dict()
+        state['dead_tokens'] = list(self.dead_tokens)
+        with open(filename, 'w') as f:
+            json.dump(state, f)
+
+    def load_state_dict(self, state_dict):
+        self.bpe.load_state_dict(state_dict)
+        self.dead_tokens = set(state_dict['dead_tokens'])
+        self.gen_mapping()
+
+    @staticmethod
+    def load(filename):
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        bpe = ThinBPE(BPE())
+        bpe.load_state_dict(data)
+        return bpe
+
+    def encode_text(self, text, dropout=0.0):
+        return [
+            self.from_bpe[i]
+            for i in self.bpe.encode_text(text, dropout=dropout)
+        ]
+
+    def decode_text(self, encoded, separator=b''):
+        return self.bpe.decode_text([self.to_bpe[i] for i in encoded],
+                                    separator=separator)
