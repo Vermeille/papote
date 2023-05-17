@@ -108,9 +108,20 @@ def tokens_dropout(tokens, mask_id, dropout_p):
         tokens)
 
 
+class NextTokenObjective:
+
+    def __call__(self, x):
+        return x[:-1], x[1:]
+
+
 class TextDirSampler:
 
-    def __init__(self, directory, num_tokens, start_of_file_token, transform):
+    def __init__(self,
+                 directory,
+                 num_tokens,
+                 start_of_file_token,
+                 transform,
+                 to_input_and_target=NextTokenObjective()):
         # recursively iterate over all files in directory
         self.samples = []
         nchars = 0
@@ -125,6 +136,7 @@ class TextDirSampler:
         self.num_tokens = num_tokens
         self.start_of_file_token = start_of_file_token
         self.transform = transform
+        self.to_input_and_target = to_input_and_target
 
     def __len__(self):
         return self.samples[-1][2] // self.num_tokens
@@ -154,7 +166,8 @@ class TextDirSampler:
         while len(enc) < self.num_tokens:
             enc += self._read_file(
                 random.choice([s[2] for s in [(0, 0, 0)] + self.samples[:-1]]))
-        return torch.tensor(enc[:self.num_tokens], dtype=torch.long)
+        return self.to_input_and_target(
+            torch.tensor(enc[:self.num_tokens], dtype=torch.long))
 
 
 class Tagger:

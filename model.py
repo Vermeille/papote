@@ -205,6 +205,7 @@ class Transformer(nn.Module):
     def forward(self, inputs):
         # - all kinds of l2 norm were worse than none
         # - all different ways to plug in positional embedding were worse
+
         pos = self.positional_embedding[:, :inputs.size(1)]
         outputs = self.token_embedding(inputs) + pos
         outputs = self.layer_norm_in(outputs)

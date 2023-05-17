@@ -1,4 +1,4 @@
-from bpe import BPE, Text
+from bpe import BPE, Text, ThinBPE
 
 if __name__ == '__main__':
     import argparse

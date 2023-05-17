@@ -23,14 +23,14 @@ def sample(model,
            seed,
            ctx_len,
            num_tokens=100,
-           top_k=40,
-           top_p=0.95,
+           top_k=100,
+           top_p=0.9,
            temperature=1.0,
            typical_p=None,
            callback_seed=None,
            callback_stream=None):
     from sampler import (ForbiddenTokens, FixedRepetitionPenalty, TopK, TopP,
-                         Temperature, Typical)
+                         Temperature, Typical, Think)
     rank = next(model.parameters()).device
     model.eval()
     encoded = bpe.encode_text(seed)
@@ -42,7 +42,10 @@ def sample(model,
             t.set_tokens(encoded)
             t.tokenize(bpe.merges)
             encoded = t.as_tokens()
-            prompt = torch.tensor(encoded[-ctx_len:], dtype=torch.long)
+            encoded_x = [
+                e for e in encoded[:-5] if e != bpe.specials['<|THINK|>']
+            ] + encoded[-5:]
+            prompt = torch.tensor(encoded_x[-ctx_len:], dtype=torch.long)
 
             logits = model(prompt[None].to(rank))[0][-1].float().cpu()
             idx = torch.arange(logits.shape[-1])
@@ -56,6 +59,8 @@ def sample(model,
             #top p sampling
             logits, idx = TopP(top_p)(logits, idx, prompt)
 
+            logits, idx = Think(bpe.specials['<|THINK|>'])(logits, idx, prompt)
+
             # typical sampling
             if typical_p is not None:
                 logits, idx = Typical(typical_p)(logits, idx, prompt)
@@ -68,6 +73,29 @@ def sample(model,
                 callback_stream(next_token)
             encoded.append(next_token)
         return bpe.decode_text(encoded)
+
+
+class ThinkObjective:
+
+    def __init__(self, think_token):
+        self.think_token = think_token
+
+    def __call__(self, x):
+        x, y = data.NextTokenObjective()(x)
+        N = x.shape[0]
+        num_think_tokens = random.randint(0, 5)
+        pos_think_tokens = random.randint(1, len(x) - num_think_tokens - 1)
+        x = torch.cat([
+            x[:pos_think_tokens],
+            torch.tensor([self.think_token] * num_think_tokens,
+                         dtype=torch.long), x[pos_think_tokens:]
+        ])
+        y = torch.cat([
+            y[:pos_think_tokens - 1],
+            torch.tensor([y[pos_think_tokens - 1]] * num_think_tokens,
+                         dtype=torch.long), y[pos_think_tokens - 1:]
+        ])
+        return x[:N], y[:N]
 
 
 def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
@@ -87,20 +115,25 @@ def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
         print('Using BPE from checkpoint')
         bpe = BPE()
         bpe.load_state_dict(checkpoint['bpe'])
+    bpe.add_special('<|THINK|>', 5)
 
     sampler = data.TextDirSampler(
-        datapath, CTX + 1, bpe.unicode_for_special('<|SOH|>'),
+        datapath,
+        CTX + 1,
+        bpe.unicode_for_special('<|SOH|>'),
         Compose([
-            data.RandomCase(bpe.unicode_for_special('<|DC1|>'),
-                            bpe.unicode_for_special('<|DC2|>'),
+            normalize_text,
+            data.RandomCase(bpe.specials['<|DC1|>'],
+                            bpe.specials['<|DC2|>'],
                             uppercase_p=0.0,
                             lowercase_p=0.00),
-            data.RandomPromptSplit(bpe.unicode_for_special('<|STX|>'), p=0.00),
+            data.RandomPromptSplit(bpe.specials['<|STX|>'], p=0.00),
             data.Tokenize(bpe,
-                          bpe.unicode_for_special('<|DC3|>'),
+                          bpe.specials['<|DC3|>'],
                           dropout=0.1,
                           dropout_p=0.00)
-        ]))
+        ]),
+        to_input_and_target=ThinkObjective(bpe.specials['<|THINK|>']))
 
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
     train_loader = DataLoader(sampler,
@@ -159,18 +192,30 @@ def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
     scaler = torch.cuda.amp.GradScaler()
 
     def train_fun(batch):
+        x, y = batch
         with torch.autocast('cuda'):
-            logits = m(batch[:, :-1]).float()
-        loss = F.cross_entropy(logits.transpose(2, 1),
-                               batch[:, 1:],
-                               reduction='none')
+            logits = m(x).float()
+        loss = F.cross_entropy(logits.transpose(2, 1), y, reduction='none')
         scaler.scale(loss.mean() / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
-            torch.tensor([len(bpe.decode_text(x)) for x in batch.cpu()]))
+            torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu()]))
+        # Compare the loss of the token preceding <|THINK|> to the loss of the token following <|THINK|>
+        # This is a proxy for the gain in perplexity that we get from thinking
+        think_mask = (x == bpe.specials['<|THINK|>'])
+        first_think = think_mask.int().argmax(dim=1) - 1
+        num_think = (first_think >= 0).sum()
+        last_think = first_think + think_mask.sum(1)
+        think_gain = torch.sum(loss[torch.arange(len(x)), last_think] -
+                               loss[torch.arange(len(x)),
+                                    first_think]) / num_think
+
+        assert (y[torch.arange(len(x)), last_think] == y[torch.arange(len(x)),
+                                                         first_think]).all()
         return {
             'loss': loss_per_char.item(),
-            'ppl': metrics.perplexity(loss_per_char).item()
+            'ppl': metrics.perplexity(loss_per_char).item(),
+            'think-gain': think_gain.item()
         }
 
     @torch.no_grad()
@@ -230,6 +275,7 @@ def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
                       grad_multiplier=ACCUMULATION),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
+        tcb.Log('think-gain', 'think-gain'),
     ])
     recipe.test_loop.callbacks.add_callbacks([
         tcb.Log('outs', 'outs'),
@@ -257,7 +303,7 @@ if __name__ == '__main__':
 
     tch.utils.parallel_run(
         train,
-        'data/',
+        'data/epub',
         args.lr,
         args.epochs,
         args.model,

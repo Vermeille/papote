@@ -32,9 +32,11 @@ def build_sampler(model, bpe, opts):
                          S.TopK(opts.top_k), S.TopP(opts.top_p),
                          S.FixedRepetitionPenalty(0.8, 32),
                          S.Typical(opts.typical_p),
+                         S.Think(5, 30, verbose=False),
                          S.Temperature(opts.temperature)),
                      stopping_criterion=S.StopTooLong(opts.length),
-                     event_handler=Printer(bpe, opts.sep))
+                     event_handler=Printer(bpe, opts.sep),
+                     prompt_processor=S.CleanThink(5))
 
 
 if __name__ == '__main__':

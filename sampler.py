@@ -150,6 +150,80 @@ class NullEventHandler:
         pass
 
 
+class PromptPassthrough:
+
+    def __call__(self, prompt):
+        return prompt
+
+
+class Think:
+
+    def __init__(self,
+                 think_token,
+                 confusion_threshold=50,
+                 max_think=5,
+                 verbose=False):
+        self.think_token = think_token
+        self.confusion_threshold = confusion_threshold
+        self.verbose = verbose
+        self.max_think = max_think
+
+    def __call__(self, logits, idx, prompt):
+        thinking = [
+            tok == self.think_token for tok in prompt[-self.max_think:]
+        ]
+        num_thinking = sum(thinking)
+        if all(thinking):
+            return logits, idx
+        elif len(idx) > self.confusion_threshold:
+            if self.verbose:
+                print(f'#{num_thinking},{len(idx)},{logits.max():.3f}', end='')
+            return torch.tensor([1.0]), torch.tensor([self.think_token],
+                                                     dtype=torch.long)
+        return logits, idx
+
+
+class AlwaysThink:
+
+    def __init__(self,
+                 think_token,
+                 confusion_threshold=50,
+                 max_think=5,
+                 verbose=False):
+        self.think_token = think_token
+        self.confusion_threshold = confusion_threshold
+        self.verbose = verbose
+        self.max_think = max_think
+
+    def __call__(self, logits, idx, prompt):
+        thinking = prompt[-1] == self.think_token
+
+        print(f'#{len(idx)},{logits.max():.3f}', end='')
+        if thinking:
+            return logits, idx
+        else:
+            return torch.tensor([1.0]), torch.tensor([self.think_token],
+                                                     dtype=torch.long)
+        return logits, idx
+
+
+class CleanThink:
+    """
+    Removes the think token from the prompt before sampling. We only keep the
+    think tokens at the end of the prompt.
+    """
+
+    def __init__(self, think_token):
+        self.think_token = think_token
+
+    def __call__(self, prompt):
+        n_think = 0
+        while prompt[len(prompt) - n_think - 1] == self.think_token:
+            n_think += 1
+        prompt = [tok for tok in prompt if tok != self.think_token]
+        return prompt + [self.think_token] * n_think
+
+
 class Sampler:
 
     def __init__(self,
@@ -157,13 +231,15 @@ class Sampler:
                  bpe,
                  logits_policy=RawLogits(),
                  stopping_criterion=StopTooLong(1024),
-                 event_handler=NullEventHandler()):
+                 event_handler=NullEventHandler(),
+                 prompt_processor=PromptPassthrough()):
         self.model = model
         self.bpe = bpe
         self.ctx_len = model.context_size
         self.logits_policy = logits_policy
         self.stopping_criterion = stopping_criterion
         self.event_handler = event_handler
+        self.prompt_processor = prompt_processor
 
     def sample(self, prompt):
         model = self.model
@@ -179,6 +255,9 @@ class Sampler:
                 t.set_tokens(encoded)
                 t.tokenize(bpe.merges)
                 encoded = t.as_tokens()
+
+                encoded = self.prompt_processor(encoded)
+
                 prompt = torch.tensor(encoded[-self.ctx_len:],
                                       dtype=torch.long)
 
