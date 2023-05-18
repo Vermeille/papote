@@ -253,22 +253,95 @@ class Transformer(nn.Module):
 
 
 def transformer_from_checkpoint(checkpoint):
-    embedding_to_size = {
-        256: 'xxxs',
-        384: 'xxs',
-        512: 'xs',
-        768: 's',
-        1024: 'm',
-        1536: 'l',
-        2560: 'xl',
-        4096: 'xxl',
-    }
+    specs = list_models()[checkpoint['model_size']]
     return make_transformer(
-        embedding_to_size[
-            checkpoint['_orig_mod.token_embedding.weight'].shape[1]],
-        checkpoint['_orig_mod.token_embedding.weight'].shape[0],
-        checkpoint['_orig_mod.positional_embedding'].shape[1],
-        checkpoint.get('_orig_mod.dropout.p', 0))
+        checkpoint['model_size'],
+        checkpoint['model']['_orig_mod.token_embedding.weight'].shape[0],
+        checkpoint['model']['_orig_mod.positional_embedding'].shape[1],
+        checkpoint['model'].get('_orig_mod.dropout.p', 0))
+
+
+def list_models():
+    return {
+        'tiny-1M': {
+            'hidden_size': 64,
+            'num_heads': 16,
+            'head_size': 4,
+            'num_layers': 8
+        },
+        'tiny-3M': {
+            'hidden_size': 128,
+            'num_heads': 16,
+            'head_size': 8,
+            'num_layers': 8
+        },
+        'tiny-8M': {
+            'hidden_size': 256,
+            'num_heads': 16,
+            'head_size': 16,
+            'num_layers': 8
+        },
+        'tiny-28M': {
+            'hidden_size': 512,
+            'num_heads': 16,
+            'head_size': 32,
+            'num_layers': 8
+        },
+        'tiny-33M': {
+            'hidden_size': 768,
+            'num_heads': 16,
+            'head_size': 32,
+            'num_layers': 4
+        },
+        'fim-xxs': {
+            'hidden_size': 384,
+            'num_heads': 6,
+            'head_size': 64,
+            'num_layers': 6
+        },
+        'fim-xs': {
+            'hidden_size': 512,
+            'num_heads': 8,
+            'head_size': 64,
+            'num_layers': 8
+        },
+        'fim-s': {
+            'hidden_size': 768,
+            'num_heads': 12,
+            'head_size': 64,
+            'num_layers': 12
+        },
+        'fim-m': {
+            'hidden_size': 1024,
+            'num_heads': 16,
+            'head_size': 64,
+            'num_layers': 24
+        },
+        'fim-l': {
+            'hidden_size': 1536,
+            'num_heads': 16,
+            'head_size': 96,
+            'num_layers': 24
+        },
+        'fim-xl': {
+            'hidden_size': 2048,
+            'num_heads': 16,
+            'head_size': 128,
+            'num_layers': 24
+        },
+        'fim-xxl': {
+            'hidden_size': 2560,
+            'num_heads': 32,
+            'head_size': 80,
+            'num_layers': 32
+        },
+        'fim-xxxl': {
+            'hidden_size': 4096,
+            'num_heads': 32,
+            'head_size': 128,
+            'num_layers': 32
+        }
+    }
 
 
 def make_transformer(size, vocab_size, context_len, dropout=0.1):
@@ -301,76 +374,12 @@ def make_transformer(size, vocab_size, context_len, dropout=0.1):
     xxxl
         5404.901376 M params
         5369.249792 M params without embeddings
+
+    tiny-X models from https://arxiv.org/abs/2305.07759
+    fim-X models from https://arxiv.org/abs/2207.14255
     """
-    if size == 'xxxs':
-        return Transformer(vocab_size,
-                           hidden_size=256,
-                           context_size=context_len,
-                           head_size=64,
-                           num_layers=6,
-                           num_heads=6,
-                           dropout_rate=dropout)
-    if size == 'xxs':
-        return Transformer(vocab_size,
-                           hidden_size=384,
-                           context_size=context_len,
-                           head_size=64,
-                           num_layers=6,
-                           num_heads=6,
-                           dropout_rate=dropout)
-    elif size == 'xs':
-        return Transformer(vocab_size,
-                           hidden_size=512,
-                           context_size=context_len,
-                           head_size=64,
-                           num_layers=8,
-                           num_heads=8,
-                           dropout_rate=dropout)
-    elif size == 's':
-        return Transformer(vocab_size,
-                           hidden_size=768,
-                           context_size=context_len,
-                           head_size=64,
-                           num_layers=12,
-                           num_heads=12,
-                           dropout_rate=dropout)
-    elif size == 'm':
-        return Transformer(vocab_size,
-                           hidden_size=1024,
-                           context_size=context_len,
-                           head_size=64,
-                           num_layers=24,
-                           num_heads=16,
-                           dropout_rate=dropout)
-    elif size == 'l':
-        return Transformer(vocab_size,
-                           hidden_size=1536,
-                           context_size=context_len,
-                           head_size=96,
-                           num_layers=24,
-                           num_heads=16,
-                           dropout_rate=dropout)
-    elif size == 'xl':
-        return Transformer(vocab_size,
-                           hidden_size=2048,
-                           context_size=context_len,
-                           head_size=128,
-                           num_layers=24,
-                           num_heads=16,
-                           dropout_rate=dropout)
-    elif size == 'xxl':
-        return Transformer(vocab_size,
-                           hidden_size=2560,
-                           context_size=context_len,
-                           head_size=80,
-                           num_layers=32,
-                           num_heads=32,
-                           dropout_rate=dropout)
-    elif size == 'xxxl':
-        return Transformer(vocab_size,
-                           hidden_size=4096,
-                           context_size=context_len,
-                           head_size=128,
-                           num_layers=32,
-                           num_heads=32,
-                           dropout_rate=dropout)
+    models = list_models()
+    return Transformer(vocab_size,
+                       context_size=context_len,
+                       dropout_rate=dropout,
+                       **models[size])
