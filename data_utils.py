@@ -111,7 +111,7 @@ def tokens_dropout(tokens, mask_id, dropout_p):
 class NextTokenObjective:
 
     def __call__(self, x):
-        return x[:-1], x[1:]
+        return x[:-1], x[1:].clone()
 
 
 class TextDirSampler:

@@ -30,7 +30,7 @@ def sample(model,
            callback_seed=None,
            callback_stream=None):
     from sampler import (ForbiddenTokens, FixedRepetitionPenalty, TopK, TopP,
-                         Temperature, Typical, Think)
+                         Temperature, Typical)
     rank = next(model.parameters()).device
     model.eval()
     encoded = bpe.encode_text(seed)
@@ -42,10 +42,7 @@ def sample(model,
             t.set_tokens(encoded)
             t.tokenize(bpe.merges)
             encoded = t.as_tokens()
-            encoded_x = [
-                e for e in encoded[:-5] if e != bpe.specials['<|THINK|>']
-            ] + encoded[-5:]
-            prompt = torch.tensor(encoded_x[-ctx_len:], dtype=torch.long)
+            prompt = torch.tensor(encoded[-ctx_len:], dtype=torch.long)
 
             logits = model(prompt[None].to(rank))[0][-1].float().cpu()
             idx = torch.arange(logits.shape[-1])
@@ -58,8 +55,6 @@ def sample(model,
 
             #top p sampling
             logits, idx = TopP(top_p)(logits, idx, prompt)
-
-            logits, idx = Think(bpe.specials['<|THINK|>'])(logits, idx, prompt)
 
             # typical sampling
             if typical_p is not None:
@@ -96,6 +91,68 @@ class ThinkObjective:
                          dtype=torch.long), y[pos_think_tokens - 1:]
         ])
         return x[:N], y[:N]
+
+
+class MLMObjective:
+
+    def __init__(self, mask_token):
+        self.mask_token = mask_token
+
+    def __call__(self, x):
+        x, y = data.NextTokenObjective()(x)
+        # randomly mask 15% of the input tokens
+        mask = torch.rand_like(x, dtype=torch.float) < 0.15
+        x[mask] = self.mask_token
+        return x, y
+
+
+class RandomPad:
+
+    def __init__(self, pad_token):
+        self.pad_token = pad_token
+
+    def __call__(self, x):
+        x, y = data.NextTokenObjective()(x)
+        N = x.shape[0]
+        for _ in range(5):
+            num_pad_tokens = random.randint(0, 5)
+            pos_pad_tokens = random.randint(1, len(x) - num_pad_tokens - 1)
+            x = torch.cat([
+                x[:pos_pad_tokens],
+                torch.tensor([self.pad_token] * num_pad_tokens,
+                             dtype=torch.long), x[pos_pad_tokens:]
+            ])
+            y = torch.cat([
+                y[:pos_pad_tokens - 1],
+                torch.tensor([y[pos_pad_tokens - 1]] * num_pad_tokens,
+                             dtype=torch.long), y[pos_pad_tokens - 1:]
+            ])
+        return x[:N], y[:N]
+
+
+def think_gain(x, y, loss, bpe):
+    # Compare the loss of the token preceding <|THINK|> to the loss of the token following <|THINK|>
+    # This is a proxy for the gain in perplexity that we get from thinking
+    think_mask = (x == bpe.specials['<|THINK|>'])
+    first_think = think_mask.int().argmax(dim=1) - 1
+    num_think = (first_think >= 0).sum()
+    last_think = first_think + think_mask.sum(1)
+    think_gain = torch.sum(loss[torch.arange(len(x)), last_think] -
+                           loss[torch.arange(len(x)), first_think]) / num_think
+
+    assert (y[torch.arange(len(x)), last_think] == y[torch.arange(len(x)),
+                                                     first_think]).all()
+    return think_gain
+
+
+def unthink(inputs):
+    think_mask = (inputs == 5)
+    think_offset = think_mask.cumsum(1) * think_mask
+    inputs = inputs.view(-1)[torch.arange(inputs.numel(), device=inputs.device)
+                             - think_offset.to(inputs.device).view(-1)].view(
+                                 *inputs.shape)
+    think_offset = think_mask[..., None]
+    return inputs, think_mask
 
 
 def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
@@ -200,22 +257,9 @@ def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
             torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu()]))
-        # Compare the loss of the token preceding <|THINK|> to the loss of the token following <|THINK|>
-        # This is a proxy for the gain in perplexity that we get from thinking
-        think_mask = (x == bpe.specials['<|THINK|>'])
-        first_think = think_mask.int().argmax(dim=1) - 1
-        num_think = (first_think >= 0).sum()
-        last_think = first_think + think_mask.sum(1)
-        think_gain = torch.sum(loss[torch.arange(len(x)), last_think] -
-                               loss[torch.arange(len(x)),
-                                    first_think]) / num_think
-
-        assert (y[torch.arange(len(x)), last_think] == y[torch.arange(len(x)),
-                                                         first_think]).all()
         return {
             'loss': loss_per_char.item(),
             'ppl': metrics.perplexity(loss_per_char).item(),
-            'think-gain': think_gain.item()
         }
 
     @torch.no_grad()
@@ -275,13 +319,13 @@ def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
                       grad_multiplier=ACCUMULATION),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
-        tcb.Log('think-gain', 'think-gain'),
     ])
     recipe.test_loop.callbacks.add_callbacks([
         tcb.Log('outs', 'outs'),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
     ])
+    recipe.register('model_type', model_size)
     recipe.register('bpe', bpe)
     recipe.to(rank)
     recipe.run(epochs)
