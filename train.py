@@ -155,9 +155,9 @@ def unthink(inputs):
     return inputs, think_mask
 
 
-def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
-          *, rank, world_size):
-    FULL_BS = 500_000
+def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
+          batch_size, global_batch_size, rank, world_size):
+    FULL_BS = global_batch_size
     LOCAL_BS = batch_size
     CTX = 512
     ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
@@ -190,7 +190,7 @@ def train(datapath, lr, epochs, model_size, pretrained, bpe_path, batch_size,
                           dropout=0.1,
                           dropout_p=0.00)
         ]),
-        to_input_and_target=ThinkObjective(bpe.specials['<|THINK|>']))
+        to_input_and_target=data.NextTokenObjective())
 
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
     train_loader = DataLoader(sampler,
@@ -340,6 +340,7 @@ if __name__ == '__main__':
     parser.add_argument('--pretrained')
     parser.add_argument('--bpe')
     parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--global-batch-size', type=int, default=500_000)
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
@@ -347,11 +348,12 @@ if __name__ == '__main__':
 
     tch.utils.parallel_run(
         train,
-        'data/epub',
-        args.lr,
-        args.epochs,
-        args.model,
-        args.pretrained,
-        args.bpe,
-        args.batch_size,
+        datapath='data/raw/x',
+        lr=args.lr,
+        epochs=args.epochs,
+        model_size=args.model,
+        pretrained=args.pretrained,
+        bpe_path=args.bpe,
+        batch_size=args.batch_size,
+        global_batch_size=args.global_batch_size,
     )
