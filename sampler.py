@@ -272,3 +272,22 @@ class Sampler:
                 self.event_handler(encoded, next_token)
                 encoded.append(next_token)
             return bpe.decode_text(encoded)
+
+
+def default_sampler(model,
+                    bpe,
+                    top_k=30,
+                    top_p=0.95,
+                    temperature=0.7,
+                    length=1024,
+                    typical_p=None,
+                    sep=''):
+    return Sampler(model,
+                   bpe,
+                   logits_policy=LogitsComposite(
+                       TopK(top_k), TopP(top_p),
+                       FixedRepetitionPenalty(0.8, 32), Typical(typical_p),
+                       Temperature(temperature)),
+                   stopping_criterion=StopTooLong(length),
+                   event_handler=Printer(bpe, sep),
+                   prompt_processor=CleanThink(5))

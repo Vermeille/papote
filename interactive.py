@@ -25,17 +25,10 @@ class Printer:
                   flush=True)
 
 
-def build_sampler(model, bpe, opts):
-    return S.Sampler(model,
-                     bpe,
-                     logits_policy=S.LogitsComposite(
-                         S.TopK(opts.top_k), S.TopP(opts.top_p),
-                         S.FixedRepetitionPenalty(0.8, 32),
-                         S.Typical(opts.typical_p),
-                         S.Temperature(opts.temperature)),
-                     stopping_criterion=S.StopTooLong(opts.length),
-                     event_handler=Printer(bpe, opts.sep),
-                     prompt_processor=S.CleanThink(5))
+def build_sampler(model, bpe, **kwargs):
+    sampler = default_sampler(model, bpe, **kwargs)
+    sampler.event_handler = Printer(bpe, sep)
+    return sampler
 
 
 if __name__ == '__main__':
@@ -60,7 +53,7 @@ if __name__ == '__main__':
                            sep='',
                            length=CTX)
 
-    sampler = build_sampler(model, bpe, opts)
+    sampler = S.default_sampler(model, bpe, **opts.__dict__)
     # Sample from the model
     with torch.inference_mode():
         while True:
@@ -95,7 +88,7 @@ if __name__ == '__main__':
                 elif command == 'length':
                     opts.length = int(args)
                     print('Length set to', opts.length)
-                sampler = build_sampler(model, bpe, opts)
+                sampler = S.defaul_sampler(model, bpe, **opts.__dict__)
                 continue
 
             out = sampler.sample(text)

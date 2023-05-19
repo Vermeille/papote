@@ -15,59 +15,7 @@ from contextlib import suppress
 import data_utils as data
 from torchvision.transforms import Compose
 import math
-
-
-@torch.no_grad()
-def sample(model,
-           bpe,
-           seed,
-           ctx_len,
-           num_tokens=100,
-           top_k=100,
-           top_p=0.9,
-           temperature=1.0,
-           typical_p=None,
-           callback_seed=None,
-           callback_stream=None):
-    from sampler import (ForbiddenTokens, FixedRepetitionPenalty, TopK, TopP,
-                         Temperature, Typical)
-    rank = next(model.parameters()).device
-    model.eval()
-    encoded = bpe.encode_text(seed)
-    if callback_seed is not None:
-        callback_seed(encoded)
-    with suppress(KeyboardInterrupt):
-        for _ in range(num_tokens):
-            t = Text('')
-            t.set_tokens(encoded)
-            t.tokenize(bpe.merges)
-            encoded = t.as_tokens()
-            prompt = torch.tensor(encoded[-ctx_len:], dtype=torch.long)
-
-            logits = model(prompt[None].to(rank))[0][-1].float().cpu()
-            idx = torch.arange(logits.shape[-1])
-            logits, idx = ForbiddenTokens([bpe.STX, bpe.DC1, bpe.DC2,
-                                           bpe.DC3])(logits, idx, prompt)
-            #logits, idx = FixedRepetitionPenalty()(logits, idx, prompt)
-
-            #top k sampling
-            logits, idx = TopK(top_k)(logits, idx, prompt)
-
-            #top p sampling
-            logits, idx = TopP(top_p)(logits, idx, prompt)
-
-            # typical sampling
-            if typical_p is not None:
-                logits, idx = Typical(typical_p)(logits, idx, prompt)
-            logits, idx = Temperature(temperature)(logits, idx, prompt)
-
-            probs = F.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, 1).item()
-            next_token = idx[next_token]
-            if callback_stream:
-                callback_stream(next_token)
-            encoded.append(next_token)
-        return bpe.decode_text(encoded)
+from sampler import default_sampler
 
 
 class ThinkObjective:
@@ -216,23 +164,6 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
                                             checkpoint['model'],
                                             fit_dst_size=True)
 
-        ckpt_ctx = checkpoint['model']['_orig_mod.positional_embedding'].shape[
-            1]
-        m.positional_embedding.data[:, :min(CTX, ckpt_ctx)] = checkpoint[
-            'model']['_orig_mod.positional_embedding'][:, :min(CTX, ckpt_ctx)]
-
-        ckpt_vocab_size = checkpoint['model'][
-            '_orig_mod.token_embedding.weight'].shape[0]
-        m.token_embedding.weight.data[:min(
-            len(bpe.vocab), ckpt_vocab_size
-        )] = checkpoint['model']['_orig_mod.token_embedding.weight'][:min(
-            len(bpe.vocab), ckpt_vocab_size)]
-
-        m.unembed.weight.data[:min(len(bpe.vocab), ckpt_vocab_size
-                                   )] = checkpoint['model'][
-                                       '_orig_mod.unembed.weight'][:min(
-                                           len(bpe.vocab), ckpt_vocab_size)]
-
     if world_size > 1:
         m = DDP(m, device_ids=[rank], output_device=rank)
 
@@ -265,11 +196,9 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
     @torch.no_grad()
     def test_fun():
         basem.eval()
+        sampler = default_sampler(basem, bpe)
         with torch.autocast('cuda'):
-            outs = [
-                sample(basem, bpe, chr(bpe.SOH), CTX, num_tokens=CTX)
-                for _ in range(10)
-            ]
+            outs = [sample(chr(bpe.SOH)) for _ in range(10)]
 
         for out in outs:
             print('-', out)
