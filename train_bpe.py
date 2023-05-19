@@ -6,6 +6,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('path', type=str, default='bpe.json')
     parser.add_argument('--vocab-size', type=int, default=4096)
+    parser.add_argument('--thin', action='store_true')
+    parser.add_argument('--data-path', type=str, default='data')
     args = parser.parse_args()
 
     test = Text(
@@ -16,8 +18,8 @@ if __name__ == '__main__':
         bpe = BPE.load(args.path)
     else:
         bpe = BPE()
-    if False:
-        bpe.learn('data',
+    if not args.thin:
+        bpe.learn(args.data_path,
                   target_vocab_size=args.vocab_size,
                   simultaneous_merges=10,
                   num_threads=16)
@@ -26,10 +28,11 @@ if __name__ == '__main__':
         print(test.as_str_tokens(bpe.vocab))
         bpe.save(args.path)
         print('ok')
-    bpe = ThinBPE(bpe)
-    bpe.learn('data',
-              target_vocab_size=args.vocab_size,
-              simultaneous_merges=10,
-              num_threads=16,
-              min_count=1000)
-    bpe.save(args.path)
+    else:
+        bpe = ThinBPE(bpe)
+        bpe.learn(args.data_path,
+                  target_vocab_size=args.vocab_size,
+                  simultaneous_merges=10,
+                  num_threads=16,
+                  min_count=1000)
+        bpe.save(args.path)
