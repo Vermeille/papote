@@ -40,7 +40,7 @@ if __name__ == '__main__':
     bpe.load_state_dict(checkpoint['bpe'])
 
     # Load the model
-    model = transformer_from_checkpoint(checkpoint['model'])
+    model = transformer_from_checkpoint(checkpoint)
     modelc = torch.compile(model)
     modelc.load_state_dict(checkpoint['model'])
     model.eval()

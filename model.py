@@ -253,9 +253,9 @@ class Transformer(nn.Module):
 
 
 def transformer_from_checkpoint(checkpoint):
-    specs = list_models()[checkpoint['model_size']]
+    specs = list_models()[checkpoint['model_type']]
     return make_transformer(
-        checkpoint['model_size'],
+        checkpoint['model_type'],
         checkpoint['model']['_orig_mod.token_embedding.weight'].shape[0],
         checkpoint['model']['_orig_mod.positional_embedding'].shape[1],
         checkpoint['model'].get('_orig_mod.dropout.p', 0))
