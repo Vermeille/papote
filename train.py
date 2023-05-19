@@ -62,7 +62,7 @@ class RandomPad:
     def __call__(self, x):
         x, y = data.NextTokenObjective()(x)
         N = x.shape[0]
-        for _ in range(5):
+        for _ in range(random.randint(5)):
             num_pad_tokens = random.randint(0, 5)
             pos_pad_tokens = random.randint(1, len(x) - num_pad_tokens - 1)
             x = torch.cat([
@@ -196,9 +196,9 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
     @torch.no_grad()
     def test_fun():
         basem.eval()
-        sampler = default_sampler(basem, bpe)
+        sample = default_sampler(basem, bpe)
         with torch.autocast('cuda'):
-            outs = [sample(chr(bpe.SOH)) for _ in range(10)]
+            outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
 
         for out in outs:
             print('-', out)

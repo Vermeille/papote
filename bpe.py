@@ -137,7 +137,7 @@ class BPE:
         ]
         random.shuffle(files)
         with Pool(num_threads) as pool:
-            while len(vocab) <= target_vocab_size:
+            while len(vocab) < target_vocab_size:
                 start_time = time.time()
                 all_pairs = Counter()
                 for pairs in pool.imap_unordered(
