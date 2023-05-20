@@ -262,85 +262,13 @@ def transformer_from_checkpoint(checkpoint):
 
 
 def list_models():
+    from model_specs.tiny import list_models as tiny
+    from model_specs.fim import list_models as fim
+    from model_specs.chinchilla import list_models as chinchilla
     return {
-        'tiny-1M': {
-            'hidden_size': 64,
-            'num_heads': 16,
-            'head_size': 4,
-            'num_layers': 8
-        },
-        'tiny-3M': {
-            'hidden_size': 128,
-            'num_heads': 16,
-            'head_size': 8,
-            'num_layers': 8
-        },
-        'tiny-8M': {
-            'hidden_size': 256,
-            'num_heads': 16,
-            'head_size': 16,
-            'num_layers': 8
-        },
-        'tiny-28M': {
-            'hidden_size': 512,
-            'num_heads': 16,
-            'head_size': 32,
-            'num_layers': 8
-        },
-        'tiny-33M': {
-            'hidden_size': 768,
-            'num_heads': 16,
-            'head_size': 48,
-            'num_layers': 4
-        },
-        'fim-xxs': {
-            'hidden_size': 384,
-            'num_heads': 6,
-            'head_size': 64,
-            'num_layers': 6
-        },
-        'fim-xs': {
-            'hidden_size': 512,
-            'num_heads': 8,
-            'head_size': 64,
-            'num_layers': 8
-        },
-        'fim-s': {
-            'hidden_size': 768,
-            'num_heads': 12,
-            'head_size': 64,
-            'num_layers': 12
-        },
-        'fim-m': {
-            'hidden_size': 1024,
-            'num_heads': 16,
-            'head_size': 64,
-            'num_layers': 24
-        },
-        'fim-l': {
-            'hidden_size': 1536,
-            'num_heads': 16,
-            'head_size': 96,
-            'num_layers': 24
-        },
-        'fim-xl': {
-            'hidden_size': 2048,
-            'num_heads': 16,
-            'head_size': 128,
-            'num_layers': 24
-        },
-        'fim-xxl': {
-            'hidden_size': 2560,
-            'num_heads': 32,
-            'head_size': 80,
-            'num_layers': 32
-        },
-        'fim-xxxl': {
-            'hidden_size': 4096,
-            'num_heads': 32,
-            'head_size': 128,
-            'num_layers': 32
-        }
+        **tiny(),
+        **fim(),
+        **chinchiilla(),
     }
 
 
