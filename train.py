@@ -121,6 +121,9 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
         bpe = BPE()
         bpe.load_state_dict(checkpoint['bpe'])
     bpe.add_special('<|THINK|>', 5)
+    bpe.add_special('<|SUFFIX|>', bpe.specials['<|NAK|>'])
+    bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
+    bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
 
     sampler = data.TextDirSampler(
         datapath,
@@ -128,15 +131,13 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
         bpe.unicode_for_special('<|SOH|>'),
         Compose([
             normalize_text,
-            data.RandomCase(bpe.specials['<|DC1|>'],
-                            bpe.specials['<|DC2|>'],
-                            uppercase_p=0.0,
-                            lowercase_p=0.00),
-            data.RandomPromptSplit(bpe.specials['<|STX|>'], p=0.00),
-            data.Tokenize(bpe,
-                          bpe.specials['<|DC3|>'],
-                          dropout=0.1,
-                          dropout_p=0.00)
+            data.CleanPrivateUnicode(),
+            data.Tokenize(bpe, bpe.specials['<|DC3|>'], dropout_p=0.00),
+            data.Crop(CTX + 1),
+            data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'],
+                                 bpe.specials['<|PREFIX|>'],
+                                 bpe.specials['<|WRAP|>'],
+                                 p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())
 
@@ -199,9 +200,6 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
         sample = default_sampler(basem, bpe)
         with torch.autocast('cuda'):
             outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
-
-        for out in outs:
-            print('-', out)
 
         test_loss = 0
         for x in test_sampler:

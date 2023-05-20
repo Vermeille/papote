@@ -35,11 +35,6 @@ def test_random_augmentations():
     sampler = data.TextDirSampler(
         'data', 64 + 1, bpe.unicode_for_special('<|SOH|>'),
         Compose([
-            data.RandomCase(bpe.unicode_for_special('<|DC2|>'),
-                            bpe.unicode_for_special('<|DC3|>'),
-                            uppercase_p=0.0,
-                            lowercase_p=0.05),
-            data.RandomPromptSplit(bpe.unicode_for_special('<|STX|>'), p=0.05),
             data.Tokenize(bpe,
                           bpe.unicode_for_special('<|DC1|>'),
                           dropout=0.1,
@@ -50,9 +45,50 @@ def test_random_augmentations():
         print(repr(bpe.decode_text(sampler[i], b',')))
 
 
+def test_simple_fim():
+    from data_utils import FillInTheMiddle
+    bpe = BPE.load('bpe.json.bkp')
+    bpe.add_special('<|SUFFIX|>', bpe.specials['<|NAK|>'])
+    bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
+    bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
+    text = bpe.encode_text(
+        "Je suis un petit canard qui fait coin coin. Je patauge dans la mare "
+        "et je suis vivant. Un jour j'ai rencontré un autre canard qui était "
+        "très méchant. Il m'a dit que j'étais un vilain petit canard et que "
+        "je devais partir. Alors je suis parti et j'ai rencontré un chasseur "
+        "qui m'a collectionné. Fin.")
+    print(
+        bpe.decode_text(
+            FillInTheMiddle(bpe.specials['<|SUFFIX|>'],
+                            bpe.specials['<|PREFIX|>'],
+                            bpe.specials['<|WRAP|>'],
+                            p=1)(text)))
+
+
 if __name__ == '__main__':
     #test_sampler()
     #test_bpe_dropout()
     #test_special_tokens()
     #test_random_augmentations()
-    pass
+    #test_simple_fim()
+    import data_utils as data
+    from torchvision.transforms import Compose
+    bpe = BPE.load('bpe.json.bkp')
+    bpe.add_special('<|SUFFIX|>', bpe.specials['<|NAK|>'])
+    bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
+    bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
+    sampler = data.TextDirSampler(
+        'data/raw/x', 64 + 1, bpe.unicode_for_special('<|SOH|>'),
+        Compose([
+            data.Tokenize(bpe,
+                          bpe.unicode_for_special('<|DC1|>'),
+                          dropout_p=0.0),
+            data.Crop(64 + 1),
+            data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'],
+                                 bpe.specials['<|PREFIX|>'],
+                                 bpe.specials['<|WRAP|>'],
+                                 p=1),
+        ]))
+
+    print(sampler[0][0])
+    print(bpe.decode_text(sampler[0][0]))

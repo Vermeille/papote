@@ -102,6 +102,35 @@ class Tokenize:
             return self.bpe.encode_text(text)
 
 
+class Crop:
+
+    def __init__(self, max_tokens):
+        self.max_tokens = max_tokens
+
+    def __call__(self, text):
+        if len(text) > self.max_tokens:
+            text = text[:self.max_tokens]
+        return text
+
+
+class FillInTheMiddle:
+
+    def __init__(self, suffix, prefix, wrap, p=0.5):
+        self.p = p
+        self.suffix = suffix
+        self.prefix = prefix
+        self.wrap = wrap
+
+    def __call__(self, text):
+        if not random.uniform(0, 1) < self.p or len(text) <= 3:
+            return text
+        text = text[:-3]
+        split_point = random.randrange(0, len(text) - 1)
+        text = ([self.suffix] + text[split_point:] + [self.prefix] +
+                text[:split_point] + [self.wrap])
+        return text
+
+
 def tokens_dropout(tokens, mask_id, dropout_p):
     return torch.where(
         torch.rand(*tokens.shape, device=tokens.device) < dropout_p, mask_id,
@@ -112,6 +141,12 @@ class NextTokenObjective:
 
     def __call__(self, x):
         return x[:-1], x[1:].clone()
+
+
+class CleanPrivateUnicode:
+
+    def __call__(self, text):
+        return ''.join([c for c in text if not 0xE000 <= ord(c) <= 0xF8FF])
 
 
 class TextDirSampler:
