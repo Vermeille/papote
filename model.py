@@ -290,7 +290,7 @@ def list_models():
         'tiny-33M': {
             'hidden_size': 768,
             'num_heads': 16,
-            'head_size': 32,
+            'head_size': 48,
             'num_layers': 4
         },
         'fim-xxs': {
