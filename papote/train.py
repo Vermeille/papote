@@ -3,19 +3,18 @@ import torch
 import torch.nn.functional as F
 import random
 import torchelie as tch
-from model import make_transformer
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchelie.callbacks as tcb
-from bpe import BPE, Text, normalize_text
-import metrics
 import os
 from contextlib import suppress
-import data_utils as data
 from torchvision.transforms import Compose
-import math
-from sampler import default_sampler
+from papote.sampler import default_sampler
+from papote.model import make_transformer
+import papote.data_utils as data
+from papote.bpe import BPE, Text, normalize_text
+import papote.metrics as metrics
 
 
 class ThinkObjective:
@@ -151,7 +150,7 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
                               persistent_workers=True)
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX,
-                             dropout=0.).to(rank)
+                             dropout=0.1).to(rank)
 
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,
@@ -282,7 +281,7 @@ if __name__ == '__main__':
 
     tch.utils.parallel_run(
         train,
-        datapath='data/raw/x',
+        datapath='data',
         lr=args.lr,
         epochs=args.epochs,
         model_size=args.model,

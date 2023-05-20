@@ -1,12 +1,11 @@
 import readline
 import torch
 import sys
-from bpe import BPE
-from model import Transformer, transformer_from_checkpoint
 from types import SimpleNamespace
-import sampler as S
-
 from colored import fg, bg, attr
+from papote.bpe import BPE
+from papote.model import Transformer, transformer_from_checkpoint
+import papote.sampler as S
 
 
 class Printer:

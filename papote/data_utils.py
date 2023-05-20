@@ -1,7 +1,7 @@
 import torch
 import random
-from bpe import BPE, Text, normalize_text
 import os
+from papote.bpe import BPE, Text, normalize_text
 
 
 class TextSampler:

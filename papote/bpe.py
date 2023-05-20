@@ -6,6 +6,9 @@ import json
 from multiprocessing import Pool
 import pyximport
 
+pyximport.install(setup_args={"script_args": ['--cython-cplus']})
+from papote.text import Text
+
 
 class NormalizeHyphens:
 
@@ -15,10 +18,6 @@ class NormalizeHyphens:
 
 def normalize_text(text):
     return NormalizeHyphens()(text)
-
-
-pyximport.install(setup_args={"script_args": ['--cython-cplus']})
-from text import Text
 
 
 def is_valid_merge(a, b):

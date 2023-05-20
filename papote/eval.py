@@ -1,9 +1,9 @@
 import torch
-from bpe import BPE
-from data_utils import EvalDirSampler
-from model import make_transformer
 import torch.nn.functional as F
-import metrics
+from papote.bpe import BPE
+from papote.data_utils import EvalDirSampler
+from papote.model import make_transformer
+import papote.metrics as metrics
 
 if __name__ == '__main__':
     torch.set_grad_enabled(False)

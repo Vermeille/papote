@@ -1,8 +1,8 @@
 import torch
 from typing import List, Optional
 from contextlib import suppress
-from bpe import Text
 import torch.nn.functional as F
+from papote.bpe import Text
 
 
 class RawLogits:

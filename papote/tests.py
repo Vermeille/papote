@@ -1,5 +1,5 @@
 from data_utils import TextDirSampler, Tokenize
-from bpe import BPE, Text
+from papote.bpe import BPE, Text
 
 
 def test_sampler():
