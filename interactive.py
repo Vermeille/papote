@@ -3,7 +3,6 @@ import torch
 import sys
 from bpe import BPE
 from model import Transformer, transformer_from_checkpoint
-from train import sample
 from types import SimpleNamespace
 import sampler as S
 
@@ -26,7 +25,8 @@ class Printer:
 
 
 def build_sampler(model, bpe, **kwargs):
-    sampler = default_sampler(model, bpe, **kwargs)
+    sep = kwargs.pop('sep', '')
+    sampler = S.default_sampler(model, bpe, **kwargs)
     sampler.event_handler = Printer(bpe, sep)
     return sampler
 
@@ -51,9 +51,9 @@ if __name__ == '__main__':
                            top_p=0.9,
                            typical_p=None,
                            sep='',
-                           length=CTX)
+                           length=CTX + 1)
 
-    sampler = S.default_sampler(model, bpe, **opts.__dict__)
+    sampler = build_sampler(model, bpe, **opts.__dict__)
     # Sample from the model
     with torch.inference_mode():
         while True:
@@ -88,7 +88,7 @@ if __name__ == '__main__':
                 elif command == 'length':
                     opts.length = int(args)
                     print('Length set to', opts.length)
-                sampler = S.defaul_sampler(model, bpe, **opts.__dict__)
+                sampler = build_sampler(model, bpe, **opts.__dict__)
                 continue
 
             out = sampler.sample(text)

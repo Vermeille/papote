@@ -289,5 +289,4 @@ def default_sampler(model,
                        FixedRepetitionPenalty(0.8, 32), Typical(typical_p),
                        Temperature(temperature)),
                    stopping_criterion=StopTooLong(length),
-                   event_handler=Printer(bpe, sep),
                    prompt_processor=CleanThink(5))
