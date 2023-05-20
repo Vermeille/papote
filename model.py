@@ -100,14 +100,11 @@ class SelfAttention(nn.Module):
         # bld -> (q/k/v)bhld
         qkv = self.qkv(x).reshape(b, l, 3, h, d).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
-        if q.device.type == 'cuda':
-            q, k, v = q.half(), k.half(), v.half()
-        att = nn.functional.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            is_causal=True,
-            dropout_p=self.dropout_rate if self.training else 0.0).float()
+        att = nn.functional.scaled_dot_product_attention(q,
+                                                         k,
+                                                         v,
+                                                         is_causal=True,
+                                                         dropout_p=0.0)
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.dropout(self.fc(att))
