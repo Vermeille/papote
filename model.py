@@ -265,40 +265,229 @@ def list_models():
     return {
         **tiny(),
         **fim(),
-        **chinchiilla(),
+        **chinchilla(),
     }
 
 
 def make_transformer(size, vocab_size, context_len, dropout=0.1):
     """
     For a vocab size of 4096 and a context of 512:
-    xxxs
-        6.953984 M params
-        4.72576 M params without embeddings
-    xxs
-        12.200448 M params
-        8.858112 M params without embeddings
-    xs
+
+    tiny-1M
+        0.88704 M params
+        0.329984 M params without embeddings
+
+    tiny-3M
+        2.42944 M params
+        1.315328 M params without embeddings
+
+    tiny-8M
+        7.48032 M params
+        5.252096 M params without embeddings
+
+    tiny-28M
         25.4464 M params
         20.989952 M params without embeddings
-    s
+
+    tiny-33M
+        30.292992 M params
+        23.60832 M params without embeddings
+
+    fim-xxs
+        12.200448 M params
+        8.858112 M params without embeddings
+
+    fim-xs
+        25.4464 M params
+        20.989952 M params without embeddings
+
+    fim-s
         77.503488 M params
         70.818816 M params without embeddings
-    m
+
+    fim-m
         260.673536 M params
         251.76064 M params without embeddings
-    l
+
+    fim-l
         579.753984 M params
         566.38464 M params without embeddings
-    xl
+
+    fim-xl
         1024.663552 M params
         1006.83776 M params without embeddings
-    xxl
+
+    fim-xxl
         2119.77216 M params
         2097.48992 M params without embeddings
-    xxxl
+
+    fim-xxxl
         5404.901376 M params
         5369.249792 M params without embeddings
+
+    chinchilla-44M
+        25.4464 M params
+        20.989952 M params without embeddings
+
+    chinchilla-57M
+        34.896384 M params
+        29.88288 M params without embeddings
+
+    chinchilla-74M
+        46.55872 M params
+        40.98816 M params without embeddings
+
+    chinchilla-90M
+        58.8544 M params
+        53.28384 M params without embeddings
+
+    chinchilla-106M
+        71.15008 M params
+        65.57952 M params without embeddings
+
+    chinchilla-117M
+        77.503488 M params
+        70.818816 M params without embeddings
+
+    chinchilla-140M
+        95.207424 M params
+        88.522752 M params without embeddings
+
+    chinchilla-163M
+        112.91136 M params
+        106.226688 M params without embeddings
+
+    chinchilla-175M
+        120.246784 M params
+        112.448 M params without embeddings
+
+    chinchilla-196M
+        136.310272 M params
+        128.511488 M params without embeddings
+
+    chinchilla-217M
+        152.37376 M params
+        144.574976 M params without embeddings
+
+    chinchilla-251M
+        176.754688 M params
+        167.841792 M params without embeddings
+
+    chinchilla-278M
+        197.7344 M params
+        188.821504 M params without embeddings
+
+    chinchilla-306M
+        218.714112 M params
+        209.801216 M params without embeddings
+
+    chinchilla-425M
+        306.1504 M params
+        295.00928 M params without embeddings
+
+    chinchilla-489M
+        355.31776 M params
+        344.17664 M params without embeddings
+
+    chinchilla-509M
+        369.20576 M params
+        356.950528 M params without embeddings
+
+    chinchilla-552M
+        404.48512 M params
+        393.344 M params without embeddings
+
+    chinchilla-587M
+        428.696576 M params
+        416.441344 M params without embeddings
+
+    chinchilla-632M
+        461.758464 M params
+        448.38912 M params without embeddings
+
+    chinchilla-664M
+        488.187392 M params
+        475.93216 M params without embeddings
+
+    chinchilla-724M
+        532.555776 M params
+        519.186432 M params without embeddings
+
+    chinchilla-816M
+        603.353088 M params
+        589.983744 M params without embeddings
+
+    chinchilla-893M
+        658.000896 M params
+        642.403328 M params without embeddings
+
+    chinchilla-1018M
+        754.36032 M params
+        738.762752 M params without embeddings
+
+    chinchilla-1143M
+        850.719744 M params
+        835.122176 M params without embeddings
+
+    chinchilla-1266M
+        940.761088 M params
+        922.935296 M params without embeddings
+
+    chinchilla-1424M
+        1060.834816 M params
+        1041.894912 M params without embeddings
+
+    chinchilla-1429M
+        1066.614784 M params
+        1048.788992 M params without embeddings
+
+    chinchilla-1593M
+        1192.46848 M params
+        1174.642688 M params without embeddings
+
+    chinchilla-1609M
+        1202.910208 M params
+        1183.970304 M params without embeddings
+
+    chinchilla-1731M
+        1294.304256 M params
+        1274.25024 M params without embeddings
+
+    chinchilla-1794M
+        1344.9856 M params
+        1326.045696 M params without embeddings
+
+    chinchilla-2007M
+        1506.67776 M params
+        1486.623744 M params without embeddings
+
+    chinchilla-2283M
+        1719.051264 M params
+        1698.997248 M params without embeddings
+
+    chinchilla-2298M
+        1726.49472 M params
+        1704.21248 M params without embeddings
+
+    chinchilla-2639M
+        1988.67968 M params
+        1966.39744 M params without embeddings
+
+    chinchilla-2980M
+        2250.86464 M params
+        2228.5824 M params without embeddings
+
+    chinchilla-3530M
+        2674.463232 M params
+        2651.06688 M params without embeddings
+
+    chinchilla-3802M
+        2879.675392 M params
+        2855.164928 M params without embeddings
+
+    chinchilla-4084M
+        3091.96544 M params
+        3066.340864 M params without embeddings
 
     tiny-X models from https://arxiv.org/abs/2305.07759
     fim-X models from https://arxiv.org/abs/2207.14255
