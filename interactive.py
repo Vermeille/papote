@@ -6,20 +6,34 @@ from model import Transformer, transformer_from_checkpoint
 from types import SimpleNamespace
 import sampler as S
 
+from colored import fg, bg, attr
+
 
 class Printer:
+
+    colors = [
+        'red',
+        'orange_red_1',
+        'dark_orange',
+        'orange_1',
+        'yellow',
+        'light_green_2',
+    ]
 
     def __init__(self, bpe, separator=''):
         self.bpe = bpe
         self.separator = separator
 
-    def __call__(self, prompt, next_token):
+    def __call__(self, prompt, next_token, prob, logit):
         if not next_token:
             print(self.bpe.decode_text(prompt, self.separator.encode()),
                   end=self.separator,
                   flush=True)
         else:
-            print(self.bpe.vocab[next_token].decode('utf-8', 'ignore'),
+            color = self.colors[int(min(prob, 0.99) * len(self.colors))]
+            print(fg(color) +
+                  self.bpe.vocab[next_token].decode('utf-8', 'ignore') +
+                  attr('reset'),
                   end=self.separator,
                   flush=True)
 
@@ -58,7 +72,11 @@ if __name__ == '__main__':
     with torch.inference_mode():
         while True:
             print(opts.__dict__)
-            text = input('>>> ')
+            try:
+                text = input('>>> ')
+            except EOFError:
+                sys.exit(0)
+
             if not text:
                 continue
             text = text.replace('\\n', '\n')

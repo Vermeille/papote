@@ -248,7 +248,7 @@ class Sampler:
         rank = next(model.parameters()).device
         model.eval()
         encoded = bpe.encode_text(prompt)
-        self.event_handler(encoded, None)
+        self.event_handler(encoded, None, None, None)
         with suppress(KeyboardInterrupt):
             while not self.stopping_criterion(encoded):
                 t = Text('')
@@ -267,9 +267,10 @@ class Sampler:
                 logits, idx = self.logits_policy(logits, idx, prompt)
 
                 probs = F.softmax(logits, dim=-1)
-                next_token = torch.multinomial(probs, 1).item()
-                next_token = idx[next_token]
-                self.event_handler(encoded, next_token)
+                next_idx = torch.multinomial(probs, 1).item()
+                next_token = idx[next_idx]
+                self.event_handler(encoded, next_token, probs[next_idx],
+                                   logits[next_idx])
                 encoded.append(next_token)
             return bpe.decode_text(encoded)
 
