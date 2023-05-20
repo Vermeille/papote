@@ -146,7 +146,7 @@ class StopComposite:
 
 class NullEventHandler:
 
-    def __call__(self, encoded, next_token):
+    def __call__(self, encoded, next_token, prob, logit):
         pass
 
 
