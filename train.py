@@ -149,8 +149,6 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
                               drop_last=True,
                               pin_memory=True,
                               persistent_workers=True)
-    print('#batches', len(train_loader), '#dataset', len(train_loader.dataset),
-          'bs', LOCAL_BS, 'accum', ACCUMULATION)
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX,
                              dropout=0.).to(rank)
@@ -158,6 +156,15 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,
           'M params without embeddings')
+
+    if epochs is None:
+        print('computing chinchilla optimal training time')
+        epochs = ((basem.num_parameters() * 20) /
+                  (len(train_loader) * FULL_BS))
+
+    print('#batches', len(train_loader), '#dataset', len(train_loader.dataset),
+          'bs', LOCAL_BS, 'accum', ACCUMULATION, 'epochs', epochs)
+    epochs = max(epochs, 1)
 
     m = torch.compile(basem)
     if pretrained is not None:
@@ -234,7 +241,7 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
     recipe.callbacks.add_callbacks([
         tcb.LRSched(tch.lr_scheduler.CosineDecay(
             optimizer,
-            len(train_loader) * epochs,
+            len(train_loader) * round(epochs),
             warmup_ratio=0.05 if pretrained is None else 0.0),
                     metric=None,
                     step_each_batch=True),
@@ -255,14 +262,14 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
     recipe.register('model_type', model_size)
     recipe.register('bpe', bpe)
     recipe.to(rank)
-    recipe.run(epochs)
+    recipe.run(round(epochs))
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--model', default='xxs')
     parser.add_argument('--pretrained')
     parser.add_argument('--bpe')
