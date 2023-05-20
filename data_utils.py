@@ -122,7 +122,7 @@ class FillInTheMiddle:
         self.wrap = wrap
 
     def __call__(self, text):
-        if not random.uniform(0, 1) < self.p or len(text) <= 3:
+        if not random.uniform(0, 1) < self.p or len(text) <= 6:
             return text
         text = text[:-3]
         split_point = random.randrange(0, len(text) - 1)

@@ -225,7 +225,7 @@ class BPE:
         text = self.process_special(text)
         t = Text(text)
         t.unicode_private_to_token()
-        t.tokenize(self.merges, dropout=dropout)
+        t.fast_tokenize(self.merges, dropout=dropout)
         return t.as_str_tokens(self.vocab)
 
     def encode(self, tokenized):
@@ -239,7 +239,7 @@ class BPE:
         text = self.process_special(text)
         t = Text(text)
         t.unicode_private_to_token()
-        t.tokenize(self.merges, dropout=dropout)
+        t.fast_tokenize(self.merges, dropout=dropout)
         return t.as_tokens()
 
     def decode_text(self, encoded, separator=b''):
