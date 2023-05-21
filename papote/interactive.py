@@ -19,15 +19,17 @@ class Printer:
         'light_green_2',
     ]
 
-    def __init__(self, bpe, separator=''):
+    def __init__(self, bpe, separator='', print_prompt=True):
         self.bpe = bpe
         self.separator = separator
+        self.print_prompt = print_prompt
 
     def __call__(self, prompt, next_token, prob, logit):
         if not next_token:
-            print(self.bpe.decode_text(prompt, self.separator.encode()),
-                  end=self.separator,
-                  flush=True)
+            if self.print_prompt:
+                print(self.bpe.decode_text(prompt, self.separator.encode()),
+                      end=self.separator,
+                      flush=True)
         else:
             color = self.colors[int(min(prob, 0.99) * len(self.colors))]
             print(fg(color) +

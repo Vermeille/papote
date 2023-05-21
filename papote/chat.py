@@ -5,32 +5,25 @@ from types import SimpleNamespace
 from papote.bpe import BPE
 from papote.model import Transformer, transformer_from_checkpoint
 from papote.sampler import default_sampler
+from papote.interactive import build_sampler as interactive_sampler, Printer
 
 
-class ChatPrinter:
+class ReversePrompt:
 
-    def __init__(self, bpe, from_, to_):
+    def __init__(self, bpe, reverse_prompt):
         self.bpe = bpe
-        self.history = ''
-        self.from_ = from_
-        self.to_ = to_
+        self.reverse_prompt = reverse_prompt
 
-    def human_says(self, text):
-        self.history += f'{self.from_}> {text}\n{self.to_}>'
-
-    def print_stream(self, next_token):
-        print(self.bpe.vocab[next_token].decode('utf-8', 'ignore'),
-              end='',
-              flush=True)
-        self.history += self.bpe.vocab[next_token].decode('utf-8', 'ignore')
-        if self.history.endswith(f'{self.from_}>'):
-            self.history = self.history[:-len(f'{self.from_}>')]
-            raise KeyboardInterrupt
+    def __call__(self, encoded):
+        text = self.bpe.decode_text(encoded)
+        return text.endswith(self.reverse_prompt)
 
 
-def build_dataset(model, bpe, opts):
-    printer = ChatPrinter(bpe, opts.from_, 'moi')
-    sampler = default_sampler(model, bpe, **opts.__dict__)
+def build_sampler(model, bpe, opts):
+    reverse_prompt = ReversePrompt(bpe, opts.pop('from_') + '>')
+    sampler = interactive_sampler(model, bpe, **opts)
+    sampler.stopping_criterion = reverse_prompt
+    sampler.event_handler.print_prompt = False
     return sampler
 
 
@@ -49,16 +42,16 @@ if __name__ == '__main__':
     model.eval()
     del checkpoint
 
-    opts = SimpleNamespace(temperature=1,
+    opts = SimpleNamespace(temperature=0.6,
                            top_k=500,
                            top_p=0.95,
                            typical_p=None,
                            sep='',
                            from_=sys.argv[2],
                            length=CTX)
-    printer = ChatPrinter(bpe, opts.from_, 'moi')
     # Sample from the model
-    sampler = default_sampler(model, bpe, **opts.__dict__)
+    sampler = build_sampler(model, bpe, dict(opts.__dict__))
+    history = f'{opts.from_}>'
     print(f'{opts.from_}> ', end='')
     with torch.inference_mode():
         while True:
@@ -89,21 +82,20 @@ if __name__ == '__main__':
                     modelc.load_state_dict(
                         torch.load(args, map_location='cpu')['model'])
                 elif command == 'sep':
-                    printer.separator = args.strip()
-                    opts.sep = printer.separator
-                    print('Separator set to', printer.separator)
+                    opts.sep = args.strip()
+                    print('Separator set to', opts.sep)
                 elif command == 'length':
                     opts.length = int(args)
                     print('Length set to', opts.length)
                 elif command == 'reset':
-                    printer.history = ''
+                    history = ''
                 elif command == 'history':
                     print('\n````')
-                    print(printer.history)
+                    print(history)
                     print('````\n')
                 print(f'{opts.from_}> ', end='')
                 sampler = default_sampler(model, bpe, **opts.__dict__)
                 continue
-            printer.human_says(text)
-            print(printer.to_ + '>', end='')
-            out = sampler.sample(printer.history)
+            history += f' {text}\nmoi>'
+            print('moi>', end='')
+            history = sampler.sample(history)
