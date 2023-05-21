@@ -42,8 +42,8 @@ if __name__ == '__main__':
     model.eval()
     del checkpoint
 
-    opts = SimpleNamespace(temperature=0.6,
-                           top_k=500,
+    opts = SimpleNamespace(temperature=0.8,
+                           top_k=50,
                            top_p=0.95,
                            typical_p=None,
                            sep='',
