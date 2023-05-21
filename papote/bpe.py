@@ -17,7 +17,11 @@ class NormalizeHyphens:
 
 
 def normalize_text(text):
-    return NormalizeHyphens()(text)
+    return clean_private_unicode(NormalizeHyphens()(text))
+
+
+def clean_private_unicode(text):
+    return ''.join([c for c in text if not 0xE000 <= ord(c) <= 0xF8FF])
 
 
 def is_valid_merge(a, b):
@@ -259,7 +263,7 @@ class ThinBPE:
         for filename in filenames:
             #print('starting', filename)
             with open(filename, 'r', errors='ignore') as f:
-                text = Text(f.read())
+                text = Text(normalize_text(f.read()))
             text.fast_tokenize(merges)
             cnt.update(Counter(text.as_tokens()))
 

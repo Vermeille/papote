@@ -1,7 +1,7 @@
 import torch
 import random
 import os
-from papote.bpe import BPE, Text, normalize_text
+from papote.bpe import BPE, Text, normalize_text, clean_private_unicode
 
 
 class TextSampler:
@@ -146,7 +146,7 @@ class NextTokenObjective:
 class CleanPrivateUnicode:
 
     def __call__(self, text):
-        return ''.join([c for c in text if not 0xE000 <= ord(c) <= 0xF8FF])
+        return clean_private_unicode(text)
 
 
 class TextDirSampler:
