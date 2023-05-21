@@ -54,7 +54,7 @@ class RandomPad:
         return x[:N], y[:N]
 
 
-def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
+def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
           batch_size, global_batch_size, rank, world_size):
     FULL_BS = global_batch_size
     LOCAL_BS = batch_size
@@ -76,6 +76,24 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
     bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
     bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
 
+    basem = make_transformer(model_size, len(bpe.vocab), CTX,
+                             dropout=0.1).to(rank)
+
+    print(basem.num_parameters() / 1e6, 'M params')
+    print(basem.num_parameters_without_embeddings() / 1e6,
+          'M params without embeddings')
+
+    print('computing chinchilla optimal training time:',
+          (basem.num_parameters() * 20) / 1e6, 'M tokens')
+
+    m = torch.compile(basem)
+    if pretrained is not None:
+        tch.utils.load_state_dict_forgiving(m,
+                                            checkpoint['model'],
+                                            fit_dst_size=True)
+
+    if world_size > 1:
+        m = DDP(m, device_ids=[rank], output_device=rank)
     sampler = data.TextDirSampler(
         datapath,
         CTX + 1,
@@ -92,39 +110,26 @@ def train(*, datapath, lr, epochs, model_size, pretrained, bpe_path,
         ]),
         to_input_and_target=data.NextTokenObjective())
 
+    random_sampler = torch.utils.data.WeightedRandomSampler(
+        [1] * len(sampler),
+        LOCAL_BS * 1000,
+        generator=torch.Generator().manual_seed(42 + rank))
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
     train_loader = DataLoader(sampler,
                               LOCAL_BS,
-                              shuffle=True,
+                              sampler=random_sampler,
                               num_workers=16,
                               drop_last=True,
                               pin_memory=True,
                               persistent_workers=True)
 
-    basem = make_transformer(model_size, len(bpe.vocab), CTX,
-                             dropout=0.1).to(rank)
-
-    print(basem.num_parameters() / 1e6, 'M params')
-    print(basem.num_parameters_without_embeddings() / 1e6,
-          'M params without embeddings')
-
-    if epochs is None:
-        print('computing chinchilla optimal training time')
-        epochs = ((basem.num_parameters() * 20) /
-                  (len(train_loader) * FULL_BS))
-
-    print('#batches', len(train_loader), '#dataset', len(train_loader.dataset),
-          'bs', LOCAL_BS, 'accum', ACCUMULATION, 'epochs', epochs)
-    epochs = max(epochs, 1)
-
-    m = torch.compile(basem)
-    if pretrained is not None:
-        tch.utils.load_state_dict_forgiving(m,
-                                            checkpoint['model'],
-                                            fit_dst_size=True)
-
-    if world_size > 1:
-        m = DDP(m, device_ids=[rank], output_device=rank)
+    epochs = round(basem.num_parameters() * 20 * chinchilla_factor /
+                   (len(train_loader) * CTX * LOCAL_BS * world_size) + 1)
+    print('#iter',
+          len(train_loader) * epochs, 'len(dataset)',
+          len(train_loader.dataset), 'bs', LOCAL_BS, 'accum', ACCUMULATION,
+          '#tokens',
+          len(train_loader) * epochs * CTX * LOCAL_BS * world_size / 1e6, 'M')
 
     # weight decay from Cramming paper: 0.01
     # weight decay from LLaMA: 0.1
@@ -220,7 +225,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=None)
+    parser.add_argument('--chinchilla-factor', type=float, default=1.0)
     parser.add_argument('--model', default='xxs')
     parser.add_argument('--pretrained')
     parser.add_argument('--bpe')
@@ -233,9 +238,9 @@ if __name__ == '__main__':
 
     tch.utils.parallel_run(
         train,
-        datapath='data',
+        datapath='data/raw/x',
         lr=args.lr,
-        epochs=args.epochs,
+        chinchilla_factor=args.chinchilla_factor,
         model_size=args.model,
         pretrained=args.pretrained,
         bpe_path=args.bpe,
