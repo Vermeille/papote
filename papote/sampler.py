@@ -222,4 +222,4 @@ def default_sampler(model,
                        FixedRepetitionPenalty(0.8, 32), Typical(typical_p),
                        Temperature(temperature)),
                    stopping_criterion=StopTooLong(length),
-                   prompt_processor=CleanThink(5))
+                   prompt_processor=PromptPassthrough())
