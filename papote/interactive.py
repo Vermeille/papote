@@ -1,3 +1,4 @@
+from typing import Optional
 import readline
 import torch
 import sys
@@ -6,6 +7,7 @@ from colored import fg, bg, attr
 from papote.bpe import BPE
 from papote.model import Transformer, transformer_from_checkpoint
 import papote.sampler as S
+from papote.utils import OptionsBase
 
 
 class Printer:
@@ -39,6 +41,22 @@ class Printer:
                   flush=True)
 
 
+class Options(OptionsBase):
+    sep: Optional[str] = ''
+    temperature: float = 0.7
+    top_k: int = 100
+    top_p: float = 0.95
+    typical_p: Optional[float] = None
+    cfg: Optional[float] = 5
+    repeat_penalty: float = 0.9
+    repeat_window: int = 16
+    length: int
+
+    def __init__(self, length):
+        super().__init__()
+        self.length = length
+
+
 def build_sampler(model, bpe, **kwargs):
     sep = kwargs.pop('sep', '')
     sampler = S.default_sampler(model, bpe, **kwargs)
@@ -56,18 +74,12 @@ if __name__ == '__main__':
 
     # Load the model
     model = transformer_from_checkpoint(checkpoint)
+    model.eval()
     modelc = torch.compile(model)
     modelc.load_state_dict(checkpoint['model'])
-    model.eval()
     del checkpoint
 
-    opts = SimpleNamespace(temperature=0.7,
-                           top_k=30,
-                           top_p=0.9,
-                           typical_p=None,
-                           sep='',
-                           length=CTX + 1)
-
+    opts = Options(1024)
     sampler = build_sampler(model, bpe, **opts.__dict__)
     # Sample from the model
     with torch.inference_mode():
@@ -83,30 +95,10 @@ if __name__ == '__main__':
             text = text.replace('\\n', '\n')
 
             if text.startswith('!'):
-                command, args = text[1:].split(' ', 1)
-                if command == 'temperature':
-                    opts.temperature = float(args)
-                    print('Temperature set to', opts.temperature)
-                elif command == 'top_k':
-                    opts.top_k = int(args)
-                    print('Top-k set to', opts.top_k)
-                elif command == 'top_p':
-                    opts.top_p = float(args)
-                    print('Top-p set to', opts.top_p)
-                elif command == 'typical_p':
-                    opts.typical_p = float(args) if args != 'None' else None
-                    print('Typical-p set to', opts.typical_p)
-                elif command == 'exit':
-                    sys.exit(0)
-                elif command == 'load':
-                    modelc.load_state_dict(
-                        torch.load(args, map_location='cpu')['model'])
-                elif command == 'sep':
-                    opts.sep = args.strip()
-                    print('Separator set to', opts.sep)
-                elif command == 'length':
-                    opts.length = int(args)
-                    print('Length set to', opts.length)
+                try:
+                    opts.parse(text[1:])
+                except Exception as e:
+                    continue
                 sampler = build_sampler(model, bpe, **opts.__dict__)
                 continue
 

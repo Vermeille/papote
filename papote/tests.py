@@ -29,7 +29,7 @@ def test_special_tokens():
 
 
 def test_random_augmentations():
-    import data_utils as data
+    import papote.data_utils as data
     from torchvision.transforms import Compose
     bpe = BPE.load('bpe.json')
     sampler = data.TextDirSampler(

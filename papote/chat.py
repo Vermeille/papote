@@ -1,3 +1,4 @@
+from typing import Optional
 import readline
 import torch
 import sys
@@ -6,6 +7,7 @@ from papote.bpe import BPE
 from papote.model import Transformer, transformer_from_checkpoint
 from papote.sampler import default_sampler
 from papote.interactive import build_sampler as interactive_sampler, Printer
+from papote.utils import OptionsBase
 
 
 class ReversePrompt:
@@ -17,6 +19,24 @@ class ReversePrompt:
     def __call__(self, encoded):
         text = self.bpe.decode_text(encoded)
         return text.endswith(self.reverse_prompt)
+
+
+class Options(OptionsBase):
+    sep: Optional[str] = ''
+    temperature: float = 0.7
+    top_k: int = 30
+    top_p: float = 0.9
+    typical_p: Optional[float] = None
+    cfg: Optional[float] = 3
+    repeat_penalty: float = 0.8
+    repeat_window: int = 32
+    length: int
+    from_: str
+
+    def __init__(self, from_, length):
+        super().__init__()
+        self.from_ = from_
+        self.length = length
 
 
 def build_sampler(model, bpe, opts):
@@ -42,17 +62,12 @@ if __name__ == '__main__':
     model.eval()
     del checkpoint
 
-    opts = SimpleNamespace(temperature=0.8,
-                           top_k=50,
-                           top_p=0.95,
-                           typical_p=None,
-                           sep='',
-                           from_=sys.argv[2],
-                           length=CTX)
+    opts = Options(sys.argv[2], 1024)
     # Sample from the model
     sampler = build_sampler(model, bpe, dict(opts.__dict__))
     history = f'{opts.from_}>'
     print(f'{opts.from_}> ', end='')
+    to_ = 'moi' if len(sys.argv) < 4 else sys.argv[3]
     with torch.inference_mode():
         while True:
             text = input(' ').replace('\\n', '\n')
@@ -60,42 +75,22 @@ if __name__ == '__main__':
                 break
 
             if text.startswith('!'):
-                try:
-                    command, args = text[1:].split(' ', 1)
-                except ValueError:
-                    command, args = text[1:], ''
-                if command == 'temperature':
-                    opts.temperature = float(args)
-                    print('Temperature set to', opts.temperature)
-                elif command == 'top_k':
-                    opts.top_k = int(args)
-                    print('Top-k set to', opts.top_k)
-                elif command == 'top_p':
-                    opts.top_p = float(args)
-                    print('Top-p set to', opts.top_p)
-                elif command == 'typical_p':
-                    opts.typical_p = float(args) if args != 'None' else None
-                    print('Typical-p set to', opts.typical_p)
-                elif command == 'exit':
+                if text == '!exit':
                     sys.exit(0)
-                elif command == 'load':
-                    modelc.load_state_dict(
-                        torch.load(args, map_location='cpu')['model'])
-                elif command == 'sep':
-                    opts.sep = args.strip()
-                    print('Separator set to', opts.sep)
-                elif command == 'length':
-                    opts.length = int(args)
-                    print('Length set to', opts.length)
-                elif command == 'reset':
+                elif text == '!reset':
                     history = ''
-                elif command == 'history':
+                elif command == '!history':
                     print('\n````')
                     print(history)
                     print('````\n')
+                else:
+                    try:
+                        opts.parse(text[1:])
+                    except Exception as e:
+                        continue
                 print(f'{opts.from_}> ', end='')
-                sampler = default_sampler(model, bpe, **opts.__dict__)
+                sampler = build_sampler(model, bpe, dict(opts.__dict__))
                 continue
-            history += f' {text}\nmoi>'
-            print('moi>', end='')
+            history += f' {text}\n{to_}>'
+            print(f'{to_}>', end='')
             history = sampler.sample(history)
