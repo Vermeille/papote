@@ -91,4 +91,6 @@ if __name__ == '__main__':
         ]))
 
     print(sampler[0][0])
-    print(bpe.decode_text(sampler[0][0]))
+    s = sampler[0]
+    print(bpe.decode_text(s[0]))
+    print(bpe.decode_text(s[1]))

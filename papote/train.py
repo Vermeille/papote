@@ -36,9 +36,9 @@ class RandomPad:
         self.pad_token = pad_token
 
     def __call__(self, x):
-        x, y = data.NextTokenObjective()(x)
-        N = x.shape[0]
-        for _ in range(random.randint(5)):
+        x, y = data.NextTokenObjective()(torch.tensor(x, dtype=torch.long))
+        N = len(x)
+        for _ in range(random.randrange(5)):
             num_pad_tokens = random.randint(0, 5)
             pos_pad_tokens = random.randint(1, len(x) - num_pad_tokens - 1)
             x = torch.cat([

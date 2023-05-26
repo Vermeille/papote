@@ -140,7 +140,10 @@ def tokens_dropout(tokens, mask_id, dropout_p):
 class NextTokenObjective:
 
     def __call__(self, x):
-        return x[:-1], x[1:].clone()
+        if isinstance(x, torch.Tensor):
+            return x[:-1], x[1:].clone()
+        else:
+            return x[:-1], list(x[1:])
 
 
 class CleanPrivateUnicode:
