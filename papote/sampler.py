@@ -45,7 +45,8 @@ class FixedRepetitionPenalty:
         counts = torch.bincount(prompt[-self.window:],
                                 minlength=max(idx.max(), prompt.max()) + 1)
         counts = torch.gather(counts, 0, idx)
-        return logits * torch.where(counts > 1, self.penalty, 1.0), idx
+        m = logits.min()
+        return (logits - m) * torch.where(counts >= 1, self.penalty, 1.0), idx
 
 
 class Temperature:
