@@ -208,19 +208,93 @@ class Sampler:
             return bpe.decode_text(encoded)
 
 
+class CFG:
+
+    def __init__(self, model, cfg, bpe):
+        self.model = model
+        self.prompt = []
+        self.prev_len = 10000000
+        self.cfg = cfg
+        self.device = next(model.parameters()).device
+        self.bpe = bpe
+
+    @staticmethod
+    def list_startswith(l, prefix):
+        return len(l) >= len(prefix) and all(l[i] == prefix[i]
+                                             for i in range(len(prefix)))
+
+    def __call__(self, logits, idx, prompt):
+        # Detect if the prompt has changed (new sampling run)
+        if len(prompt) < self.prev_len:
+            self.prompt = list(prompt)
+        self.prev_len = len(prompt)
+        # Remove the saved prompt from the beginning of the current prompt
+        # Warning: we have to account for the fact that the prompt may start to
+        # be out of the context window
+        for i in range(len(self.prompt)):
+            if self.list_startswith(prompt, self.prompt[i:]):
+                prompt = prompt[len(self.prompt) - i:]
+                break
+        else:
+            # If the prompt hasn't changed, we don't need to do anything
+            return logits, idx
+        if len(prompt) <= 3:
+            return logits, idx
+
+        unconditional_logits = self.model(prompt[None].to(
+            self.device))[0][-1].float().cpu()
+
+        logits = self.cfg * logits + (1 - self.cfg) * unconditional_logits
+
+        return logits, idx
+
+
+class ForbiddenLogits:
+
+    def __init__(self, forbidden):
+        self.forbidden = forbidden
+
+    def __call__(self, logits, idx, prompt):
+        mask = torch.full_like(idx, True, dtype=torch.bool)
+        mask[torch.tensor(self.forbidden)] = False
+        return logits[mask], idx[mask]
+
+
 def default_sampler(model,
                     bpe,
                     top_k=30,
                     top_p=0.95,
                     temperature=0.7,
                     length=1024,
+                    repeat_penalty=0.8,
+                    repeat_window=32,
                     typical_p=None,
+                    cfg=None,
                     sep=''):
+    policy = []
+
+    if cfg is not None:
+        policy.append(CFG(model, cfg, bpe))
+
+    policy += [
+        ForbiddenLogits([
+            bpe.specials['<|SYN|>'], bpe.specials['<|ETB|>'],
+            bpe.specials['<|NAK|>']
+        ])
+    ]
+    policy += [
+        FixedRepetitionPenalty(repeat_penalty, repeat_window),
+        TopK(top_k),
+        TopP(top_p),
+    ]
+
+    if typical_p is not None:
+        policy.append(Typical(typical_p))
+
+    policy += [Temperature(temperature)]
+
     return Sampler(model,
                    bpe,
-                   logits_policy=LogitsComposite(
-                       TopK(top_k), TopP(top_p),
-                       FixedRepetitionPenalty(0.8, 32), Typical(typical_p),
-                       Temperature(temperature)),
+                   logits_policy=LogitsComposite(*policy),
                    stopping_criterion=StopTooLong(length),
                    prompt_processor=PromptPassthrough())
