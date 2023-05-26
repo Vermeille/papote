@@ -31,5 +31,5 @@ if __name__ == '__main__':
             ((chunk, bpe)
              for chunk in chunks([file for file in files], num_threads))):
             total += subtotal
-            print(total / 1e6, 'M')
-        print('chinchilla optimal model size:', total / 20e6, 'M')
+            print(round(total / 1e6, 2), 'M')
+        print('chinchilla optimal model size:', round(total / 20e6, 2), 'M')
