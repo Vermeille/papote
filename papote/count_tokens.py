@@ -16,14 +16,14 @@ def count(args):
 
 
 if __name__ == '__main__':
-    directory = 'data'
+    directory = sys.argv[1]
     num_threads = 16
     files = [
         os.path.join(root, file) for root, dirs, files in os.walk(directory)
         for file in files
     ]
     random.shuffle(files)
-    bpe = BPE.load('bpe.json.bkp')
+    bpe = BPE.load(sys.argv[2])
     with Pool(num_threads) as pool:
         total = 0
         for subtotal in pool.imap_unordered(
