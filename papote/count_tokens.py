@@ -1,8 +1,8 @@
 from multiprocessing import Pool
 import os
+import sys
 import random
 from papote.bpe import BPE, chunks
-from papote.data_utils import CleanPrivateUnicode
 
 
 def count(args):
@@ -10,7 +10,7 @@ def count(args):
     total = 0
     for fn in filenames:
         with open(fn) as f:
-            text = CleanPrivateUnicode()(f.read())
+            text = f.read()
             total += len(bpe.encode_text(text))
     return total
 

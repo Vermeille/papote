@@ -1,7 +1,7 @@
 import torch
 import random
 import os
-from papote.bpe import BPE, Text, normalize_text, clean_private_unicode
+from papote.bpe import BPE, Text, clean_private_unicode
 
 
 class TextSampler:

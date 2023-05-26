@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 import random
 import torchelie as tch
-from torch.optim import AdamW
+from torch.optim import AdamW, SparseAdam
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchelie.callbacks as tcb
@@ -13,7 +13,7 @@ from torchvision.transforms import Compose
 from papote.sampler import default_sampler
 from papote.model import make_transformer
 import papote.data_utils as data
-from papote.bpe import BPE, Text, normalize_text
+from papote.bpe import BPE, Text
 import papote.metrics as metrics
 
 
@@ -99,7 +99,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         CTX + 1,
         bpe.unicode_for_special('<|SOH|>'),
         Compose([
-            normalize_text,
             data.CleanPrivateUnicode(),
             data.Tokenize(bpe, bpe.specials['<|DC3|>'], dropout_p=0.00),
             data.Crop(CTX + 1),

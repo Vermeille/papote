@@ -1,4 +1,4 @@
-from data_utils import TextDirSampler, Tokenize
+from papote.data_utils import TextDirSampler, Tokenize
 from papote.bpe import BPE, Text
 
 
@@ -46,7 +46,7 @@ def test_random_augmentations():
 
 
 def test_simple_fim():
-    from data_utils import FillInTheMiddle
+    from papote.data_utils import FillInTheMiddle
     bpe = BPE.load('bpe.json.bkp')
     bpe.add_special('<|SUFFIX|>', bpe.specials['<|NAK|>'])
     bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     #test_special_tokens()
     #test_random_augmentations()
     #test_simple_fim()
-    import data_utils as data
+    import papote.data_utils as data
     from torchvision.transforms import Compose
     bpe = BPE.load('bpe.json.bkp')
     bpe.add_special('<|SUFFIX|>', bpe.specials['<|NAK|>'])
