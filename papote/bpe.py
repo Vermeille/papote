@@ -10,16 +10,6 @@ pyximport.install(setup_args={"script_args": ['--cython-cplus']})
 from papote.text import Text
 
 
-class NormalizeHyphens:
-
-    def __call__(self, text):
-        return text.replace('—', '-')
-
-
-def normalize_text(text):
-    return clean_private_unicode(NormalizeHyphens()(text))
-
-
 def clean_private_unicode(text):
     return ''.join([c for c in text if not 0xE000 <= ord(c) <= 0xF8FF])
 
@@ -116,7 +106,7 @@ class BPE:
         for filename in filenames:
             #print('starting', filename)
             with open(filename, 'r', errors='ignore') as f:
-                text = Text(normalize_text(f.read()))
+                text = Text(f.read())
             text.fast_tokenize(merges)
             pairs = text.most_frequent_pair()[1]
 
@@ -263,7 +253,7 @@ class ThinBPE:
         for filename in filenames:
             #print('starting', filename)
             with open(filename, 'r', errors='ignore') as f:
-                text = Text(normalize_text(f.read()))
+                text = Text(f.read())
             text.fast_tokenize(merges)
             cnt.update(Counter(text.as_tokens()))
 
