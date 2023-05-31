@@ -147,7 +147,7 @@ cdef class Text:
                     t[i + 1] = -1
                     t[i + 2] = -1
 
-    def fast_tokenize(self, merges, float dropout=0.0):
+    def fast_tokenize(self, merges, float dropout=0.0, nonterminals=None):
         cdef vector[vector[int]] token2index
         cdef vector[int] pos2index
 
@@ -203,6 +203,25 @@ cdef class Text:
                     token2index[b][pos2index[b_pos]] = -1
                     i -= 1
                 i += 1
+
+        # unmerge nonterminals
+        if nonterminals is None:
+            return
+        for token in enumerate(reversed(nonterminals)):
+            a, b = merges[token]
+            if token == -1:
+                continue
+            for i in range(token2index[token].size()):
+                pos = token2index[token][i]
+                if pos == -1:
+                    continue
+                token2index[token][i] = -1
+                t[pos] = a
+                t[pos+1] = b
+                pos2index[pos] = token2index[a].size()
+                pos2index[pos+1] = token2index[b].size()
+                token2index[a].push_back(pos)
+                token2index[b].push_back(pos+1)
 
 
     def tokenize(self, merges, float dropout=0.0):
