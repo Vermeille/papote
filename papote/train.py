@@ -159,7 +159,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     @torch.no_grad()
     def test_fun():
         basem.eval()
-        sample = default_sampler(basem, bpe)
+        sample = default_sampler(basem, bpe, length=CTX)
         with torch.autocast('cuda'):
             outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
 
@@ -202,7 +202,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                     step_each_batch=True),
         tcb.Optimizer(optimizer,
                       log_lr=True,
-                      clip_grad_norm=2,
+                      clip_grad_norm=0.5,
                       scaler=scaler,
                       accumulation=ACCUMULATION,
                       grad_multiplier=ACCUMULATION),
@@ -230,6 +230,7 @@ if __name__ == '__main__':
     parser.add_argument('--bpe')
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--global-batch-size', type=int, default=500_000)
+    parser.add_argument('--data', default='data/')
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
@@ -237,7 +238,7 @@ if __name__ == '__main__':
 
     tch.utils.parallel_run(
         train,
-        datapath='data/raw/x',
+        datapath=args.data,
         lr=args.lr,
         chinchilla_factor=args.chinchilla_factor,
         model_size=args.model,
