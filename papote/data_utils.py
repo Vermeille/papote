@@ -177,7 +177,7 @@ class TextDirSampler:
         self.to_input_and_target = to_input_and_target
 
     def __len__(self):
-        return self.samples[-1][2] // self.num_tokens
+        return self.samples[-1][2] // (self.num_tokens * 10)
 
     def _read_file(self, i):
         # find the file that contains the ith character
