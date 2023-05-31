@@ -194,7 +194,9 @@ class Sampler:
                 prompt = torch.tensor(encoded[-self.ctx_len:],
                                       dtype=torch.long)
 
-                logits = model(prompt[None].to(rank))[0][-1].float().cpu()
+                logits = F.log_softmax(model(
+                    prompt[None].to(rank))[0][-1].float().cpu(),
+                                       dim=-1)
                 idx = torch.arange(logits.shape[-1])
 
                 logits, idx = self.logits_policy(logits, idx, prompt)
@@ -241,8 +243,9 @@ class CFG:
         if len(prompt) <= 3:
             return logits, idx
 
-        unconditional_logits = self.model(prompt[None].to(
-            self.device))[0][-1].float().cpu()
+        unconditional_logits = F.log_softmax(self.model(prompt[None].to(
+            self.device))[0][-1].float().cpu(),
+                                             dim=-1)
 
         logits = self.cfg * logits + (1 - self.cfg) * unconditional_logits
 
