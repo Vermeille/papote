@@ -190,6 +190,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             loss.sum(dim=1).cpu() /
             torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu()]))
         return {
+            'loss_per_sentence': loss.mean(dim=1),
             'loss': loss_per_char.item(),
             'ppl': metrics.perplexity(loss_per_char).item(),
         }
@@ -246,6 +247,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                       grad_multiplier=ACCUMULATION),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
+        BestAndWorst(bpe),
     ])
     recipe.test_loop.callbacks.add_callbacks([
         tcb.Log('outs', 'outs'),
