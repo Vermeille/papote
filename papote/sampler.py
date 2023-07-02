@@ -210,7 +210,7 @@ class Sampler:
             return bpe.decode_text(encoded)
 
 
-class CFG:
+class PromptCFG:
 
     def __init__(self, model, cfg, bpe):
         self.model = model
@@ -247,8 +247,10 @@ class CFG:
             self.device))[0][-1].float().cpu(),
                                              dim=-1)
 
-        logits = self.cfg * logits + (1 - self.cfg) * unconditional_logits
-
+        cond_logits = F.log_softmax(logits, dim=-1)
+        cfg_logits = self.cfg * cond_logits + (1 -
+                                               self.cfg) * unconditional_logits
+        logits = cfg_logits * 0.7 + cond_logits * 0.3
         return logits, idx
 
 
@@ -277,7 +279,7 @@ def default_sampler(model,
     policy = []
 
     if cfg is not None:
-        policy.append(CFG(model, cfg, bpe))
+        policy.append(PromptCFG(model, cfg, bpe))
 
     policy += [
         ForbiddenLogits([
@@ -286,7 +288,7 @@ def default_sampler(model,
         ])
     ]
     policy += [
-        FixedRepetitionPenalty(repeat_penalty, repeat_window),
+        #FixedRepetitionPenalty(repeat_penalty, repeat_window),
         TopK(top_k),
         TopP(top_p),
     ]
