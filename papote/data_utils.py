@@ -160,14 +160,27 @@ class TextDirSampler:
                  start_of_file_token,
                  transform,
                  to_input_and_target=NextTokenObjective()):
+        # load list of files to ignore from directory/ignore.txt
+        ignore_path = os.path.join(directory, 'ignore.txt')
+        ignore = set()
+        if os.path.exists(ignore_path):
+            with open(ignore_path, 'r') as f:
+                ignore = ignore | set(f.read().split('\n'))
         # recursively iterate over all files in directory
         self.samples = []
         nchars = 0
         for root, dirs, files in os.walk(directory):
             for file in files:
                 fpath = os.path.join(root, file)
-                with open(fpath, 'r') as f:
-                    txt = f.read()
+                if fpath in ignore:
+                    print('ignoring', fpath)
+                    continue
+                with open(fpath, 'r', errors='ignore') as f:
+                    try:
+                        txt = f.read()
+                    except UnicodeDecodeError:
+                        print('utf8 error', fpath)
+                        continue
                     nchars += len(txt)
                     self.samples.append((fpath, len(txt), nchars))
 
