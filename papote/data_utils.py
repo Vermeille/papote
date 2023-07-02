@@ -202,14 +202,18 @@ class TextDirSampler:
             idx += 1
 
         # read the file
-        with open(self.samples[idx][0], 'r', errors='ignore') as f:
+        path = self.samples[idx][0]
+        with open(path, 'r', errors='ignore') as f:
             f.seek(i)
             # we consider that a token is ~10 characters
             text = f.read(self.num_tokens * 10)
             if i == 0:
                 text = self.start_of_file_token + text
 
-        return self.transform(text)
+        if not random.randrange(0, 10) == 9:
+            text = f"<<{path.split('/')[-1].replace('_', ' ')}>>{text}"
+        out = self.transform(text)
+        return out
 
     def __getitem__(self, i):
         enc = self._read_file(i * self.num_tokens +
