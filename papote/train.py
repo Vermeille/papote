@@ -1,3 +1,4 @@
+import html
 import math
 import torch
 import torch.nn.functional as F
@@ -15,6 +16,43 @@ from papote.model import make_transformer
 import papote.data_utils as data
 from papote.bpe import BPE, Text
 import papote.metrics as metrics
+
+
+class BestAndWorst:
+
+    def __init__(self, bpe, k=5):
+        super().__init__()
+        self.bpe = bpe
+        self.k = k
+        self.worst = []
+        self.best = []
+
+    def on_epoch_start(self, state):
+        self.worst = []
+        self.best = []
+
+    @torch.no_grad()
+    def on_batch_end(self, state):
+        all = self.best + self.worst + list(
+            zip(state['loss_per_sentence'],
+                (self.bpe.decode_text(xx) for xx in state['batch'][0])))
+        all.sort(key=lambda x: -x[0])
+        self.worst = all[:self.k]
+        self.best = all[-self.k:]
+
+        if state['iters'] % 100 == 0:
+            e = html.escape
+            state['metrics']['inspect'] = f"""<h3>Best</h3>
+            <table>
+            <tr><th>Loss</th><th>Text</th></tr>
+            {''.join(f'<tr><td>{x[0]}</td><td>{e(repr(x[1]))}</td></tr>' for x in self.best)}
+            </table>
+            <h3>Worst</h3>
+            <table>
+            <tr><th>Loss</th><th>Text</th></tr>
+            {''.join(f'<tr><td>{x[0]}</td><td>{e(repr(x[1]))}</td></tr>' for x in self.worst)}
+            </table>
+            """
 
 
 class MLMObjective:
