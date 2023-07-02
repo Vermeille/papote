@@ -10,7 +10,11 @@ def count(args):
     total = 0
     for fn in filenames:
         with open(fn) as f:
-            text = f.read()
+            try:
+                text = f.read()
+            except UnicodeDecodeError:
+                print('UnicodeDecodeError:', fn)
+                continue
             total += len(bpe.encode_text(text))
     return total
 
