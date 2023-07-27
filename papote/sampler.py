@@ -178,6 +178,7 @@ class Sampler:
         model = self.model
         bpe = self.bpe
 
+        kv_cache = None  #[]
         rank = next(model.parameters()).device
         model.eval()
         encoded = bpe.encode_text(prompt)
@@ -194,8 +195,8 @@ class Sampler:
                 prompt = torch.tensor(encoded[-self.ctx_len:],
                                       dtype=torch.long)
 
-                logits = F.log_softmax(model(
-                    prompt[None].to(rank))[0][-1].float().cpu(),
+                logits = F.log_softmax(model((prompt[None]).to(rank),
+                                             kv_cache)[0][-1].float().cpu(),
                                        dim=-1)
                 idx = torch.arange(logits.shape[-1])
 
@@ -250,7 +251,6 @@ class PromptCFG:
         cond_logits = F.log_softmax(logits, dim=-1)
         cfg_logits = self.cfg * cond_logits + (1 -
                                                self.cfg) * unconditional_logits
-        logits = cfg_logits * 0.7 + cond_logits * 0.3
         return logits, idx
 
 

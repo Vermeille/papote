@@ -210,7 +210,7 @@ class TextDirSampler:
             if i == 0:
                 text = self.start_of_file_token + text
 
-        if not random.randrange(0, 10) == 9:
+        if False and not random.randrange(0, 10) == 9:
             text = f"<<{path.split('/')[-1].replace('_', ' ')}>>{text}"
         out = self.transform(text)
         return out

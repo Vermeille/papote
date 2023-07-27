@@ -45,7 +45,8 @@ class BestAndWorst:
             state['metrics']['inspect'] = f"""<h3>Best</h3>
             <table>
             <tr><th>Loss</th><th>Text</th></tr>
-            {''.join(f'<tr><td>{x[0]}</td><td>{e(repr(x[1]))}</td></tr>' for x in self.best)}
+            {''.join(f'<tr><td>{x[0]}</td><td>{e(repr(x[1]))}</td></tr>' for x
+                in reversed(self.best))}
             </table>
             <h3>Worst</h3>
             <table>
@@ -96,7 +97,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
           batch_size, global_batch_size, rank, world_size):
     FULL_BS = global_batch_size
     LOCAL_BS = batch_size
-    CTX = 512
+    CTX = 2048
     ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
 
     if pretrained is not None:
@@ -105,6 +106,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     if bpe_path is not None:
         print('loading BPE from', bpe_path)
         bpe = BPE.load(bpe_path)
+        print(bpe.vocab)
     else:
         print('Using BPE from checkpoint')
         bpe = BPE()
@@ -115,7 +117,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX,
-                             dropout=0.1).to(rank)
+                             dropout=0.0).to(rank)
 
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,
@@ -124,11 +126,24 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     print('computing chinchilla optimal training time:',
           (basem.num_parameters() * 20) / 1e6, 'M tokens')
 
-    m = torch.compile(basem)
+    m = basem  #torch.compile(basem)
+    print(m)
     if pretrained is not None:
         tch.utils.load_state_dict_forgiving(m,
                                             checkpoint['model'],
                                             fit_dst_size=True)
+        rnd = make_transformer(model_size,
+                               m.context_size,
+                               m.positional_embedding.shape[1],
+                               dropout=0.0).to(rank)
+
+        with torch.no_grad():
+            for rnd_p, p in zip(rnd.parameters(), basem.parameters()):
+                # warm start
+                if len(p.shape) > 1:
+                    p.data = p.data * 0.3 + rnd_p.data * 0.01
+
+        del rnd
 
     if world_size > 1:
         m = DDP(m, device_ids=[rank], output_device=rank)
@@ -140,12 +155,10 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             data.CleanPrivateUnicode(),
             data.Tokenize(bpe, bpe.specials['<|DC3|>'], dropout_p=0.00),
             data.Crop(CTX + 1),
-            data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'],
-                                 bpe.specials['<|PREFIX|>'],
-                                 bpe.specials['<|WRAP|>'],
-                                 p=0.5),
+            #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())
+    #RandomPad(bpe.specials['<|THINK|>']))
 
     random_sampler = torch.utils.data.WeightedRandomSampler(
         [1] * len(sampler),
@@ -183,8 +196,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     def train_fun(batch):
         x, y = batch
         with torch.autocast('cuda'):
-            logits = m(x).float()
-        loss = F.cross_entropy(logits.transpose(2, 1), y, reduction='none')
+            loss = m(x, output_ids=y).float()
         scaler.scale(loss.mean() / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
@@ -200,14 +212,15 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         basem.eval()
         sample = default_sampler(basem, bpe, length=CTX)
         with torch.autocast('cuda'):
-            outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
+            #outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
+            outs = [sample.sample('Le') for _ in range(10)]
 
         test_loss = 0
         for x in test_sampler:
             xgpu = x.to(rank)
             with torch.autocast('cuda'):
-                logits = m(xgpu[None, :-1]).float()
-            loss = F.cross_entropy(logits.transpose(2, 1), xgpu[None, 1:])
+                loss = m(xgpu[None, :-1], output_ids=xgpu[None,
+                                                          1:]).mean().float()
             # get loss per char to account for different tokenizations
             loss *= x.shape[0] / len(bpe.decode_text(x))
             del xgpu
