@@ -3,8 +3,10 @@ import os
 from collections import Counter
 import random
 import json
+import time
 from multiprocessing import Pool
 import pyximport
+from operator import itemgetter
 
 pyximport.install(setup_args={"script_args": ['--cython-cplus']})
 from papote.text import Text
@@ -100,18 +102,47 @@ class BPE:
         return False
 
     @staticmethod
+    def _can_use_cache(filename, start_time):
+        if not os.path.exists(f'.cache/{filename}'):
+            os.makedirs(os.path.dirname(f'.cache/{filename}'), exist_ok=True)
+            return False
+
+        cache_mtime = os.path.getmtime(f'.cache/{filename}')
+        if cache_mtime < start_time:
+            return False
+
+        mtime = os.path.getmtime(filename)
+        if cache_mtime < mtime:
+            return False
+
+        return True
+
+    @staticmethod
     def _learn_from_files(args):
         cnt = Counter()
-        filenames, merges, vocab = args
+        filenames, merges, vocab, merge_all, start_time = args
         for filename in filenames:
-            #print('starting', filename)
-            with open(filename, 'r', errors='ignore') as f:
-                text = Text(f.read())
+            # if filename has a cache that is more recent than the file and the
+            # current run, use it
+            use_cache = self._can_use_cache(filename, start_time)
+
+            if use_cache:
+                text = Text.load(f'.cache/{filename}')
+            else:
+                with open(filename, 'r', errors='ignore') as f:
+                    text = Text(f.read())
+            len_before = len(text)
             text.fast_tokenize(merges)
+            len_after = len(text)
+
+            if len_before > 0 and random.random() < 1 - len_after / len_before:
+                text.save(f'.cache/{filename}')
+
             pairs = text.most_frequent_pair()[1]
 
             for merge, count in pairs.items():
-                if is_valid_merge(vocab[merge[0]], vocab[merge[1]]):
+                if merge_all or is_valid_merge(vocab[merge[0]],
+                                               vocab[merge[1]]):
                     cnt[merge] += count
 
         return dict(cnt.most_common(len(cnt) // 10))
@@ -120,9 +151,11 @@ class BPE:
               directory,
               target_vocab_size=1000,
               simultaneous_merges=1,
-              num_threads=8):
+              num_threads=8,
+              merge_all=False):
         merges = self.merges
         vocab = self.vocab
+        start_timestamp = time.time()
 
         files = [
             os.path.join(root, file)
@@ -131,20 +164,22 @@ class BPE:
         random.shuffle(files)
         with Pool(num_threads) as pool:
             while len(vocab) < target_vocab_size:
-                start_time = time.time()
+                iter_start_time = time.time()
                 all_pairs = Counter()
+                print('learning from', len(files), 'files')
                 for pairs in pool.imap_unordered(
                         self._learn_from_files,
-                    ((chunk, merges, vocab)
+                    ((chunk, merges, vocab, merge_all, start_timestamp)
                      for chunk in chunks([file
                                           for file in files], num_threads))):
                     all_pairs.update(pairs)
 
-                all_pairs = sorted(all_pairs.keys(),
-                                   key=lambda x: all_pairs[x],
-                                   reverse=True)
+                print('learned', len(all_pairs), 'new merges')
+                all_pairs = list(all_pairs.items())
+                all_pairs.sort(key=itemgetter(1), reverse=True)
+
                 num_new_tokens = 0
-                for pair in all_pairs:
+                for pair, pair_count in all_pairs:
                     if (num_new_tokens >= simultaneous_merges
                             or len(vocab) >= target_vocab_size):
                         break
@@ -155,7 +190,8 @@ class BPE:
                               vocab[pair[0]].decode(errors='replace'),
                               '::',
                               vocab[pair[1]].decode(errors='replace'),
-                              ']',
+                              '] count=',
+                              pair_count,
                               sep='')
                         continue
                     print(len(merges),
@@ -163,13 +199,14 @@ class BPE:
                           vocab[pair[0]].decode(errors='replace'),
                           '::',
                           vocab[pair[1]].decode(errors='replace'),
-                          ']',
+                          '] count=',
+                          pair_count,
                           sep='')
                     merges.append(pair)
                     new_token = vocab[pair[0]] + vocab[pair[1]]
                     vocab.append(new_token)
                     num_new_tokens += 1
-                print('time:', time.time() - start_time)
+                print('time:', time.time() - iter_start_time)
         self.vocab = vocab
         self.merges = merges
 

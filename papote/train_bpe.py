@@ -7,6 +7,7 @@ if __name__ == '__main__':
     parser.add_argument('path', type=str, default='bpe.json')
     parser.add_argument('--vocab-size', type=int, default=4096)
     parser.add_argument('--thin', action='store_true')
+    parser.add_argument('--merge-all', action='store_true')
     parser.add_argument('--data-path', type=str, default='data')
     args = parser.parse_args()
 
@@ -22,7 +23,8 @@ if __name__ == '__main__':
         bpe.learn(args.data_path,
                   target_vocab_size=args.vocab_size,
                   simultaneous_merges=10,
-                  num_threads=16)
+                  num_threads=16,
+                  merge_all=args.merge_all)
         test.tokenize(bpe.merges)
 
         print(test.as_str_tokens(bpe.vocab))

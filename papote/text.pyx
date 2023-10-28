@@ -1,28 +1,52 @@
 #cython: language_level=3
 #cython: boundscheck=False
 #cython: wraparound=False
-from libc.stdlib cimport rand, RAND_MAX
+import array
+from libc.stdlib cimport rand, RAND_MAX, malloc
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 from libcpp.map cimport map
 from libcpp.pair cimport pair
 from cython.operator cimport dereference as deref
 from typing import List
+from libc.stdio cimport FILE, fopen, fread, fwrite, fclose
 
 cdef float random():
     return float(rand()) / RAND_MAX
 
 cdef class Text:
     cdef vector[int] text
+    cdef int dirty
 
     def __init__(self, text):
         self.text = text.encode('utf-8')
+        self.dirty = False
+
+    def __len__(self):
+        self.garbage_collect()
+        return self.text.size()
+
+    def save(self, path):
+        self.garbage_collect()
+
+        cdef int* t = self.text.data()
+        cdef int size = self.text.size()
+        cdef FILE* f = fopen(path.encode('utf-8'), 'wb')
+        fwrite(&size, sizeof(int), 1, f)
+        fwrite(t, sizeof(int), size, f)
+        fclose(f)
 
     @staticmethod
-    def from_bytes(text: bytes):
-        t = Text('')
-        t.text = text
-        return t
+    def load(path):
+        cdef int size
+        cdef int* t
+        cdef FILE* f = fopen(path.encode('utf-8'), 'rb')
+        out = Text('')
+        fread(&size, sizeof(int), 1, f)
+        out.text.resize(size)
+        fread(out.text.data(), sizeof(int), size, f)
+        fclose(f)
+        return out
 
     def _as_tokens(self):
         return self.text
@@ -34,16 +58,24 @@ cdef class Text:
         self.garbage_collect()
         return self._as_tokens()
 
+    def to_bytes(self):
+        return array.array('i', self.as_tokens()).tobytes()
+
     def garbage_collect(self):
         cdef int i
         cdef int j
         cdef int size = self.text.size()
         cdef vector[int] new_text
+
+        if not self.dirty:
+            return
+
         new_text.reserve(size)
         for i in range(size):
             if self.text[i] != -1:
                 new_text.push_back(self.text[i])
         self.text = new_text
+        self.dirty = False
 
     def merge(self, int t1, int t2, int new_token, float dropout=0.0) -> int:
         cdef int i
@@ -60,6 +92,7 @@ cdef class Text:
                     self.text[i] = new_token
                     self.text[j] = -1
                     merged += 1
+                    self.dirty = True
             i = j
         return merged
 
@@ -201,6 +234,7 @@ cdef class Text:
                     pos2index[a_pos] = token2index[token].size() - 1
                     token2index[a][i] = -1
                     token2index[b][pos2index[b_pos]] = -1
+                    self.dirty = True
                     i -= 1
                 i += 1
 

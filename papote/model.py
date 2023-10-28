@@ -93,6 +93,7 @@ class SelfAttention(nn.Module):
         self.dropout_rate = dropout_rate
         self.qkv = tu.xavier(
             nn.Linear(hidden_size, head_size * num_heads * 3, bias=False))
+        self.norm = nn.LayerNorm(self.qkv.out_features)
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
         self.dropout = (nn.Dropout(dropout_rate, True)
@@ -101,7 +102,8 @@ class SelfAttention(nn.Module):
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
-        qkv = self.qkv(x).reshape(b, l, 3, h, d).permute(2, 0, 3, 1, 4)
+        qkv = self.norm(self.qkv(x)).reshape(b, l, 3, h,
+                                             d).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
         if kv_cache is not None:
             # update k, v
@@ -127,6 +129,7 @@ class MultiQuerySelfAttention(nn.Module):
             nn.Linear(hidden_size,
                       head_size * num_heads + 2 * head_size,
                       bias=False))
+        self.norm = nn.LayerNorm(self.qkv.out_features)
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
         self.dropout = (nn.Dropout(dropout_rate, True)
@@ -135,7 +138,7 @@ class MultiQuerySelfAttention(nn.Module):
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
-        qkv = self.qkv(x).reshape(b, l, -1, d).permute(2, 0, 1, 3)
+        qkv = self.norm(self.qkv(x)).reshape(b, l, -1, d).permute(2, 0, 1, 3)
         q, k, v = (qkv[2:].transpose(0, 1), qkv[0:1].transpose(0, 1),
                    qkv[1:2].transpose(0, 1))
         if kv_cache is not None:
@@ -166,8 +169,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
         super().__init__()
         self.layer_norm1 = nn.LayerNorm(hidden_size)
-        self.sa = MultiQuerySelfAttention(hidden_size, num_heads, head_size,
-                                          dropout_rate)
+        self.sa = SelfAttention(hidden_size, num_heads, head_size,
+                                dropout_rate)
         self.feed_forward = nn.Sequential(
             tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False), ),
             GEGLU(),
