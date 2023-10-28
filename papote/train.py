@@ -206,11 +206,12 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                       betas=(0.9, 0.95))
 
     scaler = torch.cuda.amp.GradScaler()
+    loss_fn = data.SeqWeightedLoss()
 
     def train_fun(batch):
         x, y = batch
         with torch.autocast('cuda'):
-            loss = m(x, output_ids=y).float()
+            loss = m(x, output_ids=y, loss_fn=loss_fn).float()
         scaler.scale(loss.mean() / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
@@ -218,6 +219,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         return {
             'loss_at_pos': LogCtxLoss(loss.mean(dim=0)),
             'loss_per_sentence': loss.mean(dim=1),
+            'pos_weight': LogCtxLoss(loss_fn.weight),
             'loss': loss_per_char.item(),
             'ppl': metrics.perplexity(loss_per_char).item(),
         }
@@ -276,6 +278,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
         tcb.Log('loss_at_pos', 'loss_at_pos'),
+        tcb.Log('pos_weight', 'pos_weight'),
         BestAndWorst(bpe),
     ])
     recipe.test_loop.callbacks.add_callbacks([
@@ -283,6 +286,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
     ])
+    recipe.register('loss_fn', loss_fn)
     recipe.register('model_type', model_size)
     recipe.register('bpe', bpe)
     recipe.to(rank)

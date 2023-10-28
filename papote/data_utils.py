@@ -263,3 +263,19 @@ class Pad:
 
     def __call__(self, data):
         return data + [self.pad_id] * max(0, self.ctx - len(data))
+
+
+class SeqWeightedLoss(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y, reduction='none'):
+        loss = torch.nn.functional.cross_entropy(x, y, reduction=reduction)
+        with torch.no_grad():
+            if not hasattr(self, 'weight'):
+                self.register_buffer('weight', loss.mean(0).detach())
+            baseline = self.weight.median()
+            w = self.weight / baseline
+            self.weight = 0.999 * self.weight + 0.001 * loss.mean(0).detach()
+        return loss / w
