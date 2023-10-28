@@ -93,6 +93,19 @@ class RandomPad:
         return x[:N], y[:N]
 
 
+class LogCtxLoss:
+
+    def __init__(self, loss):
+        self.loss = loss
+
+    def to_visdom(self, vis, name):
+        vis.line(X=list(range(len(self.loss))),
+                 Y=self.loss,
+                 win=name,
+                 name=name,
+                 opts=dict(title=name))
+
+
 def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
           batch_size, global_batch_size, rank, world_size):
     FULL_BS = global_batch_size
@@ -155,6 +168,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             data.CleanPrivateUnicode(),
             data.Tokenize(bpe, bpe.specials['<|DC3|>'], dropout_p=0.00),
             data.Crop(CTX + 1),
+            data.Pad(CTX + 1, bpe.specials['<|EOT|>']),
             #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())
@@ -202,6 +216,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             loss.sum(dim=1).cpu() /
             torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu()]))
         return {
+            'loss_at_pos': LogCtxLoss(loss.mean(dim=0)),
             'loss_per_sentence': loss.mean(dim=1),
             'loss': loss_per_char.item(),
             'ppl': metrics.perplexity(loss_per_char).item(),
@@ -260,6 +275,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                       grad_multiplier=ACCUMULATION),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
+        tcb.Log('loss_at_pos', 'loss_at_pos'),
         BestAndWorst(bpe),
     ])
     recipe.test_loop.callbacks.add_callbacks([

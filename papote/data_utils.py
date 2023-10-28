@@ -253,3 +253,13 @@ class Tagger:
             tags = tags + ['<|NUL|>'] * (self.max_tags - len(tags))
         random.shuffle(tags)
         return ''.join(tags)
+
+
+class Pad:
+
+    def __init__(self, ctx, pad_id):
+        self.ctx = ctx
+        self.pad_id = pad_id
+
+    def __call__(self, data):
+        return data + [self.pad_id] * max(0, self.ctx - len(data))
