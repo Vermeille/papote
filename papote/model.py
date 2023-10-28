@@ -327,7 +327,11 @@ class Transformer(nn.Module):
         assert len(dup_undecay
                    ) == 0, f'Duplicated undecayable parameters: {dup_undecay}'
 
-    def forward(self, input_ids, kv_cache=None, output_ids=None):
+    def forward(self,
+                input_ids,
+                kv_cache=None,
+                output_ids=None,
+                loss_fn=F.cross_entropy):
         # - all kinds of l2 norm were worse than none
         # - all different ways to plug in positional embedding were worse
         if (kv_cache is not None
@@ -356,9 +360,9 @@ class Transformer(nn.Module):
 
         logits = self.token_embedding(input_ids, outputs, embed=False)
         if output_ids is not None:
-            return F.cross_entropy(logits.transpose(2, 1),
-                                   output_ids,
-                                   reduction='none')
+            return loss_fn(logits.transpose(2, 1),
+                           output_ids,
+                           reduction='none')
         return logits
 
     def decayable_parameters(self):
