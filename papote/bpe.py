@@ -157,11 +157,14 @@ class BPE:
         vocab = self.vocab
         start_timestamp = time.time()
 
+        print('finding files')
         files = [
             os.path.join(root, file)
             for root, dirs, files in os.walk(directory) for file in files
         ]
+        print('shuffling files')
         random.shuffle(files)
+        print('done')
         with Pool(num_threads) as pool:
             while len(vocab) < target_vocab_size:
                 iter_start_time = time.time()
@@ -297,11 +300,14 @@ class ThinBPE:
         return dict(cnt.most_common(len(cnt)))
 
     def clean(self, directory, min_count=200, num_threads=8):
+        print('collecting files')
         files = [
             os.path.join(root, file)
             for root, dirs, files in os.walk(directory) for file in files
         ]
+        print('shuffling files')
         random.shuffle(files)
+        print('start')
         with Pool(num_threads) as pool:
             start_time = time.time()
             all_counts = Counter()
