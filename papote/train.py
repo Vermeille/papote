@@ -206,17 +206,19 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                       betas=(0.9, 0.95))
 
     scaler = torch.cuda.amp.GradScaler()
-    loss_fn = data.SeqWeightedLoss()
+    loss_fn = data.SeqWeightedLoss(0.99)
 
     def train_fun(batch):
         x, y = batch
         with torch.autocast('cuda'):
-            loss = m(x, output_ids=y, loss_fn=loss_fn).float()
+            pred = m(x).float()
+        loss = loss_fn(pred.transpose(1, 2), y)
         scaler.scale(loss.mean() / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
             torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu()]))
         return {
+            'pred': pred.detach(),
             'loss_at_pos': LogCtxLoss(loss.mean(dim=0)),
             'loss_per_sentence': loss.mean(dim=1),
             'pos_weight': LogCtxLoss(loss_fn.weight),
@@ -232,23 +234,34 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             #outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
             outs = [sample.sample('Le') for _ in range(10)]
 
+        state = {'metrics': {}}
         test_loss = 0
+        topk = tcb.TopkAccAvg(15, False, 'running')
+        topk.on_epoch_start(state)
+        total_acc = 0
         for x in test_sampler:
             xgpu = x.to(rank)
             with torch.autocast('cuda'):
-                loss = m(xgpu[None, :-1], output_ids=xgpu[None,
-                                                          1:]).mean().float()
+                preds = m(xgpu[None, :-1]).float()
+            loss = F.cross_entropy(preds.transpose(1, 2),
+                                   xgpu[None, 1:],
+                                   reduction='none').mean()
             # get loss per char to account for different tokenizations
             loss *= x.shape[0] / len(bpe.decode_text(x))
+            state['pred'] = preds
+            state['batch'] = (None, xgpu[None, 1:])
+            topk.on_batch_end(state)
             del xgpu
             test_loss += loss
         test_loss /= len(test_sampler)
+        topk.on_epoch_end(state)
 
         basem.train()
         return {
             'outs': '<hr/>'.join(outs).replace('\n', '<br/>'),
             'loss': test_loss,
-            'ppl': metrics.perplexity(test_loss).item()
+            'ppl': metrics.perplexity(test_loss).item(),
+            **state['metrics'],
         }
 
     recipe = tch.recipes.TrainAndCall(
@@ -279,6 +292,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         tcb.Log('ppl', 'ppl'),
         tcb.Log('loss_at_pos', 'loss_at_pos'),
         tcb.Log('pos_weight', 'pos_weight'),
+        tcb.TopkAccAvg(k=15, post_each_batch=True),
         BestAndWorst(bpe),
     ])
     recipe.test_loop.callbacks.add_callbacks([
