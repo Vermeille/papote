@@ -267,8 +267,9 @@ class Pad:
 
 class SeqWeightedLoss(torch.nn.Module):
 
-    def __init__(self):
+    def __init__(self, beta=0.999):
         super().__init__()
+        self.beta = beta
 
     def forward(self, x, y, reduction='none'):
         loss = torch.nn.functional.cross_entropy(x, y, reduction=reduction)
@@ -277,5 +278,6 @@ class SeqWeightedLoss(torch.nn.Module):
                 self.register_buffer('weight', loss.mean(0).detach())
             baseline = self.weight.median()
             w = self.weight / baseline
-            self.weight = 0.999 * self.weight + 0.001 * loss.mean(0).detach()
+            self.weight = self.beta * self.weight + (
+                1 - self.beta) * loss.mean(0).detach()
         return loss / w
