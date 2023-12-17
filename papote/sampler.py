@@ -185,11 +185,6 @@ class Sampler:
         self.event_handler(encoded, None, None, None)
         with suppress(KeyboardInterrupt):
             while not self.stopping_criterion(encoded):
-                t = Text('')
-                t.set_tokens(encoded)
-                t.tokenize(bpe.merges)
-                encoded = t.as_tokens()
-
                 encoded = self.prompt_processor(encoded)
 
                 prompt = torch.tensor(encoded[-self.ctx_len:],
@@ -265,6 +260,89 @@ class ForbiddenLogits:
         return logits[mask], idx[mask]
 
 
+def candidates_for_continuation(vocab: list[bytes],
+                                continuation: bytes) -> list[int]:
+    # TODO: use a trie (Copilot's suggestion. I thought about it too but are we
+    # gaining much and is it worth the complexity?)
+    candidates = [
+        i for i, token in enumerate(vocab)
+        if continuation.startswith(token) or token.startswith(continuation)
+    ]
+    candidates.sort(key=lambda i: len(vocab[i]), reverse=True)
+    return candidates
+
+
+def tokenize_continuation(
+        vocab: list[bytes],
+        continuation: bytes) -> tuple[list[int], list[int], bytes]:
+    tokens = []
+    while True:
+        candidates = candidates_for_continuation(vocab, continuation)
+        assert len(candidates) > 0, f'No candidates for {continuation}'
+        token = vocab[candidates[0]]
+        if continuation.startswith(token):
+            tokens.append(candidates[0])
+            continuation = continuation[len(token):]
+        else:
+            return tokens, candidates, continuation
+
+
+class TokenHealer:
+
+    def __init__(self, vocab: list[bytes]):
+        self.vocab = vocab
+        self.num_rollback_chars = max(len(token) for token in vocab)
+        self.continuation = b''
+        self.first = True
+        self.candidates = None
+
+    def prompt_processor(self, tokens: list[int]) -> list[int]:
+        if self.first:
+            self.first = False
+            # backtrack as many tokens / characters as the longest token
+            continuation = b''
+            while len(continuation) < self.num_rollback_chars and len(
+                    tokens) > 1:
+                continuation = self.vocab[tokens[-1]] + continuation
+                tokens = tokens[:-1]
+            print(f'rolled back, Continuation: {continuation}')
+        else:
+            if self.continuation == b'':
+                self.candidates = None
+                return tokens
+            assert (self.continuation.startswith(self.vocab[tokens[-1]])
+                    or self.vocab[tokens[-1]].startswith(self.continuation))
+            continuation = self.continuation[len(self.vocab[tokens[-1]]):]
+            print(f'Continuation: {continuation}')
+
+        # restore unambiguous tokens from the continuation
+        next_tokens, candidates, continuation = tokenize_continuation(
+            self.vocab, continuation)
+        print(
+            f'{next_tokens=} {continuation=} candidates={[self.vocab[c] for c in candidates]}'
+        )
+        tokens += next_tokens
+        # set candidates
+        self.candidates = candidates
+        self.continuation = continuation
+        return tokens
+
+    def only_valid_logits(self, logits, idx, prompt):
+        if self.candidates is None:
+            return logits, idx
+        mask = torch.full_like(idx, False, dtype=torch.bool)
+        mask[torch.tensor(self.candidates)] = True
+        return logits[mask], idx[mask]
+
+    def __call__(self, *args):
+        if len(args) == 1 and isinstance(args[0], list):
+            return self.prompt_processor(args[0])
+        elif len(args) == 3 and isinstance(args[0], torch.Tensor):
+            return self.only_valid_logits(*args)
+        else:
+            raise ValueError(f'Invalid arguments: {args}')
+
+
 def default_sampler(model,
                     bpe,
                     top_k=30,
@@ -276,16 +354,15 @@ def default_sampler(model,
                     typical_p=None,
                     cfg=None,
                     sep=''):
+    healer = TokenHealer(bpe.vocab)
     policy = []
 
     if cfg is not None:
         policy.append(PromptCFG(model, cfg, bpe))
 
     policy += [
-        ForbiddenLogits([
-            bpe.specials['<|SYN|>'], bpe.specials['<|ETB|>'],
-            bpe.specials['<|NAK|>']
-        ])
+        healer,
+        #ForbiddenLogits([ bpe.specials['<|SYN|>'], bpe.specials['<|ETB|>'], bpe.specials['<|NAK|>'] ])
     ]
     policy += [
         #FixedRepetitionPenalty(repeat_penalty, repeat_window),
@@ -302,4 +379,4 @@ def default_sampler(model,
                    bpe,
                    logits_policy=LogitsComposite(*policy),
                    stopping_criterion=StopTooLong(length),
-                   prompt_processor=PromptPassthrough())
+                   prompt_processor=healer)

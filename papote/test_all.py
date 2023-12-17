@@ -1,5 +1,6 @@
 from papote.data_utils import TextDirSampler, Tokenize
 from papote.bpe import BPE, Text
+from papote.sampler import candidates_for_continuation, tokenize_continuation
 
 
 def test_sampler():
