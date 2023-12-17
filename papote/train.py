@@ -228,10 +228,11 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     @torch.no_grad()
     def test_fun():
         basem.eval()
-        sample = default_sampler(basem, bpe, length=CTX)
         with torch.autocast('cuda'):
-            #outs = [sample.sample(chr(bpe.SOH)) for _ in range(10)]
-            outs = [sample.sample('Le') for _ in range(10)]
+            outs = []
+            for _ in range(10):
+                sample = default_sampler(basem, bpe, length=CTX)
+                outs.append(sample.sample('<|SOH|>Le'))
 
         state = {'metrics': {}}
         test_loss = 0

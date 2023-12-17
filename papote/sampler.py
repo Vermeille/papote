@@ -182,7 +182,6 @@ class Sampler:
         rank = next(model.parameters()).device
         model.eval()
         encoded = bpe.encode_text(prompt)
-        self.event_handler(encoded, None, None, None)
         with suppress(KeyboardInterrupt):
             while not self.stopping_criterion(encoded):
                 encoded = self.prompt_processor(encoded)
