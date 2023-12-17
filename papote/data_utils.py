@@ -2,6 +2,7 @@ import torch
 import random
 import os
 from papote.bpe import BPE, Text, clean_private_unicode
+import torch.nn.functional as F
 
 
 class TextSampler:
@@ -262,17 +263,20 @@ class Pad:
         self.pad_id = pad_id
 
     def __call__(self, data):
+        if len(data) < self.ctx:
+            print(data)
         return data + [self.pad_id] * max(0, self.ctx - len(data))
 
 
 class SeqWeightedLoss(torch.nn.Module):
 
-    def __init__(self, beta=0.999):
+    def __init__(self, beta=0.999, loss_fn=F.cross_entropy):
         super().__init__()
         self.beta = beta
+        self.loss_fn = loss_fn
 
     def forward(self, x, y, reduction='none'):
-        loss = torch.nn.functional.cross_entropy(x, y, reduction=reduction)
+        loss = self.loss_fn(x, y, reduction=reduction)
         with torch.no_grad():
             if not hasattr(self, 'weight'):
                 self.register_buffer('weight', loss.mean(0).detach())
