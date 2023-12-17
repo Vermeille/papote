@@ -36,5 +36,6 @@ if __name__ == '__main__':
                   target_vocab_size=args.vocab_size,
                   simultaneous_merges=10,
                   num_threads=16,
-                  min_count=1000)
+                  min_count=1000,
+                  merge_all=args.merge_all)
         bpe.save(args.path)
