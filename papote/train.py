@@ -202,10 +202,10 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         'lr': lr,
         'weight_decay': 0.01 if decayable else 0.0
     } for (decayable, fan_in), params in basem.mu_parametrization().items()],
-                      betas=(0.9, 0.95))
+                      betas=(0.9, 0.95))  # transformer++ betas
 
     scaler = torch.cuda.amp.GradScaler()
-    loss_fn = data.SeqWeightedLoss(0.99)
+    loss_fn = data.SeqWeightedLoss(0.99, loss_fn=data.binary_entropy)
 
     def train_fun(batch):
         x, y = batch
