@@ -124,7 +124,7 @@ class BPE:
         for filename in filenames:
             # if filename has a cache that is more recent than the file and the
             # current run, use it
-            use_cache = self._can_use_cache(filename, start_time)
+            use_cache = BPE._can_use_cache(filename, start_time)
 
             if use_cache:
                 text = Text.load(f'.cache/{filename}')
@@ -140,12 +140,14 @@ class BPE:
 
             pairs = text.most_frequent_pair()[1]
 
-            for merge, count in pairs.items():
-                if merge_all or is_valid_merge(vocab[merge[0]],
-                                               vocab[merge[1]]):
-                    cnt[merge] += count
+            if merge_all:
+                cnt.update(pairs)
+            else:
+                for merge, count in pairs.items():
+                    if is_valid_merge(vocab[merge[0]], vocab[merge[1]]):
+                        cnt[merge] += count
 
-        return dict(cnt.most_common(len(cnt) // 10))
+        return dict(cnt.most_common(len(cnt) // 1))
 
     def learn(self,
               directory,
@@ -329,15 +331,19 @@ class ThinBPE:
               target_vocab_size=1000,
               simultaneous_merges=1,
               min_count=200,
-              num_threads=8):
+              num_threads=8,
+              merge_all=False):
         dead_tokens = self.clean(directory, min_count, num_threads)
         while len(self.bpe.vocab) - len(dead_tokens) < target_vocab_size:
             print('#tokens:', len(self.bpe.vocab), '#dead:', len(dead_tokens),
-                  ', learning',
+                  [
+                      self.bpe.vocab[i].decode('utf-8', 'replace')
+                      for i in dead_tokens
+                  ], ', learning',
                   target_vocab_size - len(self.bpe.vocab) + len(dead_tokens),
                   'new tokens')
             self.bpe.learn(directory, target_vocab_size + len(dead_tokens),
-                           simultaneous_merges, num_threads)
+                           simultaneous_merges, num_threads, merge_all)
             dead_tokens = self.clean(directory, min_count, num_threads)
         self.dead_tokens = dead_tokens
 
