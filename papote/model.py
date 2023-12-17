@@ -136,7 +136,7 @@ class SelfAttention(nn.Module):
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
-        qkv = self.norm(self.qkv(x)).reshape(b, l, 3, h,
+        qkv = self.qkv(self.norm(x)).reshape(b, l, 3, h,
                                              d).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
         if kv_cache is not None:
@@ -196,6 +196,16 @@ class GEGLU(nn.Module):
         return x * F.gelu(gate)
 
 
+class SwiGLU(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x, gate = x.chunk(2, dim=-1)
+        return x * F.silu(gate)
+
+
 class TransformerBlock(nn.Module):
 
     def __init__(self, hidden_size, num_heads, head_size):
@@ -204,7 +214,7 @@ class TransformerBlock(nn.Module):
         self.sa = SelfAttention(hidden_size, num_heads, head_size)
         self.feed_forward = nn.Sequential(
             tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False), ),
-            GEGLU(),
+            SwiGLU(),
             tu.constant_init(
                 nn.Linear(2 * hidden_size, hidden_size, bias=False), 0.))
         self.layer_norm2 = nn.LayerNorm(hidden_size)
