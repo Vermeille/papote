@@ -299,6 +299,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         tcb.Log('outs', 'outs'),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
+        tcb.Log('topk15_acc', 'topk15_acc'),
     ])
     recipe.register('loss_fn', loss_fn)
     recipe.register('model_type', model_size)
