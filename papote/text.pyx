@@ -241,7 +241,7 @@ cdef class Text:
         # unmerge nonterminals
         if nonterminals is None:
             return
-        for token in enumerate(reversed(nonterminals)):
+        for token in reversed(nonterminals):
             a, b = merges[token]
             if token == -1:
                 continue
