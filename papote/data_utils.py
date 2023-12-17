@@ -285,3 +285,12 @@ class SeqWeightedLoss(torch.nn.Module):
             self.weight = self.beta * self.weight + (
                 1 - self.beta) * loss.mean(0).detach()
         return loss / w
+
+
+@torch.jit.script
+def binary_entropy(logits, labels, reduction: str):
+    # make one hot from labels
+    labels = torch.zeros_like(logits).scatter_(1, labels.unsqueeze(1), 1.0)
+    return F.binary_cross_entropy_with_logits(logits,
+                                              labels,
+                                              reduction=reduction).sum(1)
