@@ -110,7 +110,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
           batch_size, global_batch_size, rank, world_size):
     FULL_BS = global_batch_size
     LOCAL_BS = batch_size
-    CTX = 2048
+    CTX = 256
     ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
 
     if pretrained is not None:
@@ -139,7 +139,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     print('computing chinchilla optimal training time:',
           (basem.num_parameters() * 20) / 1e6, 'M tokens')
 
-    m = basem  #torch.compile(basem)
+    m = torch.compile(basem)
     print(m)
     if pretrained is not None:
         tch.utils.load_state_dict_forgiving(m,
