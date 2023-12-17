@@ -63,6 +63,42 @@ class SinusoidalPositional(torch.nn.Module):
         return self.pe[:, :input_ids.shape[1], :]
 
 
+class Rotary(torch.nn.Module):
+
+    def __init__(self, dim, base=10000):
+        super().__init__()
+        inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer("inv_freq", inv_freq)
+        self.seq_len_cached = None
+        self.cos_cached = None
+        self.sin_cached = None
+
+    def forward(self, q, k, v, seq_dim=-2):
+        seq_len = q.shape[seq_dim]
+        if seq_len != self.seq_len_cached:
+            self.seq_len_cached = seq_len
+            t = torch.arange(q.shape[seq_dim],
+                             device=q.device).type_as(self.inv_freq)
+            freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+            emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
+            self.cos_cached = emb.cos()[:, :]
+            self.sin_cached = emb.sin()[:, :]
+        return (*self.apply_rotary_pos_emb(q, k, self.cos_cached,
+                                           self.sin_cached), v)
+
+    # rotary pos emb helpers:
+
+    def rotate_half(self, x):
+        x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+        return torch.cat(
+            (-x2, x1),
+            dim=x1.ndim - 1)  # dim=-1 triggers a bug in torch < 1.8.0
+
+    def apply_rotary_pos_emb(self, q, k, cos, sin):
+        return (q * cos) + (self.rotate_half(q) *
+                            sin), (k * cos) + (self.rotate_half(k) * sin)
+
+
 class ScaledSinosoidal(SinusoidalPositional):
     """Sinusoidal with scaling (see FLASH paper)."""
 
@@ -96,8 +132,7 @@ class SelfAttention(nn.Module):
         self.norm = nn.LayerNorm(self.qkv.out_features)
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
-        self.dropout = (nn.Dropout(dropout_rate, True)
-                        if dropout_rate > 0 else nn.Identity())
+        self.rotary = Rotary(head_size)
 
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
@@ -111,11 +146,12 @@ class SelfAttention(nn.Module):
                               dim=2), torch.cat([kv_cache[1], v], dim=2))
             # update cache
             kv_cache[:] = [k, v]
+        q, k, v = self.rotary(q, k, v)
         att = nn.functional.scaled_dot_product_attention(
             q, k, v, is_causal=kv_cache is None, dropout_p=0.0)
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
-        return self.dropout(self.fc(att))
+        return self.fc(att)
 
 
 class MultiQuerySelfAttention(nn.Module):
@@ -132,8 +168,6 @@ class MultiQuerySelfAttention(nn.Module):
         self.norm = nn.LayerNorm(self.qkv.out_features)
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
-        self.dropout = (nn.Dropout(dropout_rate, True)
-                        if dropout_rate > 0 else nn.Identity())
 
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
@@ -151,7 +185,7 @@ class MultiQuerySelfAttention(nn.Module):
             q, k, v, is_causal=kv_cache is None, dropout_p=0.0)
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
-        return self.dropout(self.fc(att))
+        return self.fc(att)
 
 
 class GEGLU(nn.Module):
@@ -285,10 +319,9 @@ class Transformer(nn.Module):
         super().__init__()
         self.context_size = context_size
         self.token_embedding = TokenDict(num_tokens, hidden_size)
-        self.positional_embedding = nn.Parameter(
-            torch.randn(1, context_size, hidden_size) * 0.02)
+        #self.positional_embedding = nn.Parameter( torch.randn(1, context_size, hidden_size) * 0.02)
         self.layer_norm_in = nn.LayerNorm(hidden_size)
-        self.pos_norm = nn.LayerNorm(hidden_size)
+        #self.pos_norm = nn.LayerNorm(hidden_size)
         self.dropout = (nn.Dropout(dropout_rate)
                         if dropout_rate > 0 else nn.Identity())
 
@@ -346,15 +379,15 @@ class Transformer(nn.Module):
             offset = kv_cache[0][0].shape[2] if kv_cache is not None else 0
         #print(offset, len(kv_cache), kv_cache[0][0].shape if kv_cache else None, kv_cache[0][1].shape if kv_cache else None)
         outputs = self.token_embedding(input_ids, latents=None, embed=True)
-        pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
-        outputs = self.layer_norm_in(outputs) + self.pos_norm(pos)
+        #pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
+        outputs = self.layer_norm_in(outputs)  # + self.pos_norm(pos)
         outputs = self.dropout(outputs)
 
         def do(f, *args, **kwargs):
             return f(*args, **kwargs)
 
         for i, transformer_block in enumerate(self.transformer_blocks):
-            f = do if i % 2 == 0 else torch.utils.checkpoint.checkpoint
+            f = do  # if i % 2 == 0 else torch.utils.checkpoint.checkpoint
             outputs = f(transformer_block, outputs,
                         kv_cache[i] if kv_cache else None)
 
@@ -374,7 +407,7 @@ class Transformer(nn.Module):
                 yield p
 
     def undecayable_parameters(self):
-        yield self.positional_embedding
+        #yield self.positional_embedding
         yield self.token_embedding.weight
 
     def mu_parametrization(self):
@@ -395,18 +428,19 @@ class Transformer(nn.Module):
         return sum(p.numel() for p in self.parameters())
 
     def num_parameters_without_embeddings(self):
-        return (sum(p.numel() for p in self.parameters()) -
-                #self.token_embedding.weight.numel() -
-                self.positional_embedding.numel() -
-                self.token_embedding.unembed.weight.numel())
+        return (
+            sum(p.numel() for p in self.parameters()) -
+            #self.token_embedding.weight.numel() -
+            #self.positional_embedding.numel() -
+            self.token_embedding.unembed.weight.numel())
 
 
 def transformer_from_checkpoint(checkpoint):
     specs = list_models()[checkpoint['model_type']]
     return make_transformer(
-        checkpoint['model_type'], checkpoint['model']
-        ['_orig_mod.token_embedding.token_embedding.weight'].shape[0],
-        checkpoint['model']['_orig_mod.positional_embedding'].shape[1],
+        checkpoint['model_type'],
+        checkpoint['model']['token_embedding.token_embedding.weight'].shape[0],
+        checkpoint['model']['positional_embedding'].shape[1],
         checkpoint['model'].get('dropout.p', 0))
 
 
