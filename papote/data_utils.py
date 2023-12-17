@@ -264,8 +264,6 @@ class Pad:
         self.pad_id = pad_id
 
     def __call__(self, data):
-        if len(data) < self.ctx:
-            print(data)
         return data + [self.pad_id] * max(0, self.ctx - len(data))
 
 
