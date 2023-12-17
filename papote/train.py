@@ -129,8 +129,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
     bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
 
-    basem = make_transformer(model_size, len(bpe.vocab), CTX,
-                             dropout=0.0).to(rank)
+    basem = make_transformer(model_size, len(bpe.vocab), CTX).to(rank)
 
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,

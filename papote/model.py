@@ -122,14 +122,13 @@ class ScaledSinosoidal(SinusoidalPositional):
 
 class SelfAttention(nn.Module):
 
-    def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
+    def __init__(self, hidden_size, num_heads, head_size):
         super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
-        self.dropout_rate = dropout_rate
+        self.norm = nn.LayerNorm(hidden_size)
         self.qkv = tu.xavier(
             nn.Linear(hidden_size, head_size * num_heads * 3, bias=False))
-        self.norm = nn.LayerNorm(self.qkv.out_features)
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
         self.rotary = Rotary(head_size)
@@ -148,7 +147,7 @@ class SelfAttention(nn.Module):
             kv_cache[:] = [k, v]
         q, k, v = self.rotary(q, k, v)
         att = nn.functional.scaled_dot_product_attention(
-            q, k, v, is_causal=kv_cache is None, dropout_p=0.0)
+            q, k, v, is_causal=kv_cache is None)
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.fc(att)
@@ -156,11 +155,10 @@ class SelfAttention(nn.Module):
 
 class MultiQuerySelfAttention(nn.Module):
 
-    def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
+    def __init__(self, hidden_size, num_heads, head_size):
         super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
-        self.dropout_rate = dropout_rate
         self.qkv = tu.xavier(
             nn.Linear(hidden_size,
                       head_size * num_heads + 2 * head_size,
@@ -182,7 +180,7 @@ class MultiQuerySelfAttention(nn.Module):
             # update cache
             kv_cache[:] = [k, v]
         att = nn.functional.scaled_dot_product_attention(
-            q, k, v, is_causal=kv_cache is None, dropout_p=0.0)
+            q, k, v, is_causal=kv_cache is None)
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.fc(att)
@@ -200,19 +198,15 @@ class GEGLU(nn.Module):
 
 class TransformerBlock(nn.Module):
 
-    def __init__(self, hidden_size, num_heads, head_size, dropout_rate):
+    def __init__(self, hidden_size, num_heads, head_size):
         super().__init__()
         self.layer_norm1 = nn.LayerNorm(hidden_size)
-        self.sa = SelfAttention(hidden_size, num_heads, head_size,
-                                dropout_rate)
+        self.sa = SelfAttention(hidden_size, num_heads, head_size)
         self.feed_forward = nn.Sequential(
             tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False), ),
             GEGLU(),
             tu.constant_init(
-                nn.Linear(2 * hidden_size, hidden_size, bias=False), 0.),
-            #MultiVQ2(latent_dim=64, num_tokens=2048, dim=-1, init_mode='first', max_age=200, return_indices=False),
-            (nn.Dropout(dropout_rate, False)
-             if dropout_rate > 0 else nn.Identity()))
+                nn.Linear(2 * hidden_size, hidden_size, bias=False), 0.))
         self.layer_norm2 = nn.LayerNorm(hidden_size)
 
     def forward(self, x, kv_cache=None):
@@ -315,18 +309,14 @@ class PatchEmbedding(TokenDict):
 class Transformer(nn.Module):
 
     def __init__(self, num_tokens, hidden_size, num_layers, num_heads,
-                 head_size, context_size, dropout_rate):
+                 head_size, context_size):
         super().__init__()
-        self.context_size = context_size
+        self.register_buffer('context_size', torch.tensor(context_size))
         self.token_embedding = TokenDict(num_tokens, hidden_size)
-        #self.positional_embedding = nn.Parameter( torch.randn(1, context_size, hidden_size) * 0.02)
         self.layer_norm_in = nn.LayerNorm(hidden_size)
-        #self.pos_norm = nn.LayerNorm(hidden_size)
-        self.dropout = (nn.Dropout(dropout_rate)
-                        if dropout_rate > 0 else nn.Identity())
 
         self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(hidden_size, num_heads, head_size, dropout_rate)
+            TransformerBlock(hidden_size, num_heads, head_size)
             for _ in range(num_layers)
         ])
 
@@ -381,7 +371,6 @@ class Transformer(nn.Module):
         outputs = self.token_embedding(input_ids, latents=None, embed=True)
         #pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
         outputs = self.layer_norm_in(outputs)  # + self.pos_norm(pos)
-        outputs = self.dropout(outputs)
 
         def do(f, *args, **kwargs):
             return f(*args, **kwargs)
@@ -443,7 +432,6 @@ def transformer_from_checkpoint(checkpoint):
         checkpoint['model']
         ['_orig_mod.token_embedding.token_embedding.weight'].shape[0],
         512  #checkpoint['model']['positional_embedding'].shape[1],
-        #checkpoint['model'].get('dropout.p', 0)
     )
 
 
@@ -458,7 +446,7 @@ def list_models():
     }
 
 
-def make_transformer(size, vocab_size, context_len, dropout=0.1):
+def make_transformer(size, vocab_size, context_len):
     """
     For a vocab size of 4096 and a context of 512:
 
@@ -682,7 +670,4 @@ def make_transformer(size, vocab_size, context_len, dropout=0.1):
     fim-X models from https://arxiv.org/abs/2207.14255
     """
     models = list_models()
-    return Transformer(vocab_size,
-                       context_size=context_len,
-                       dropout_rate=dropout,
-                       **models[size])
+    return Transformer(vocab_size, context_size=context_len, **models[size])
