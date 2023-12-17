@@ -206,10 +206,16 @@ class TextDirSampler:
         path = self.samples[idx][0]
         with open(path, 'r', errors='ignore') as f:
             f.seek(i)
-            # we consider that a token is ~10 characters
-            text = f.read(self.num_tokens * 10)
+            # we consider that a token is ~30 characters
+            text = f.read(self.num_tokens * 30)
             if i == 0:
                 text = self.start_of_file_token + text
+            else:
+                try:
+                    text = text[text.find('\n') + 1:]
+                except ValueError:
+                    pass
+            text = '<|SOH|>' + text
 
         if False and not random.randrange(0, 10) == 9:
             text = f"<<{path.split('/')[-1].replace('_', ' ')}>>{text}"
@@ -217,13 +223,8 @@ class TextDirSampler:
         return out
 
     def __getitem__(self, i):
-        enc = self._read_file(i * self.num_tokens +
-                              random.randint(0, self.num_tokens))
-        while len(enc) < self.num_tokens:
-            enc += self._read_file(
-                random.choice([s[2] for s in [(0, 0, 0)] + self.samples[:-1]]))
-        return self.to_input_and_target(
-            torch.tensor(enc[:self.num_tokens], dtype=torch.long))
+        enc = self._read_file(i * self.num_tokens)
+        return self.to_input_and_target(torch.tensor(enc, dtype=torch.long))
 
 
 class Tagger:
