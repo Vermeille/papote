@@ -239,7 +239,8 @@ class TokenDict(nn.Module):
         if tied_embedding:
             self.unembed.weight = self.token_embedding.weight
         else:
-            nn.init.normal_(self.unembed.weight, 0, 1 / hidden_size)
+            nn.init.normal_(self.unembed.weight, 0,
+                            2 / math.sqrt(hidden_size) / 10)
 
     def forward(self, input_ids, latents, embed=True):
         if embed:
