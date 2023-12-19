@@ -126,18 +126,17 @@ class SelfAttention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
-        self.norm = nn.LayerNorm(hidden_size)
-        self.qkv = tu.xavier(
-            nn.Linear(hidden_size, head_size * num_heads * 3, bias=False))
-        self.fc = tu.constant_init(
-            nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
+        self.qkv = tu.normal_init(
+            nn.Linear(hidden_size, head_size * num_heads * 3, bias=False),
+            math.sqrt(2 / (5 * hidden_size)))
+        self.fc = tu.xavier(
+            nn.Linear(head_size * num_heads, hidden_size, bias=False))
         self.rotary = Rotary(head_size)
 
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
-        qkv = self.qkv(self.norm(x)).reshape(b, l, 3, h,
-                                             d).permute(2, 0, 3, 1, 4)
+        qkv = self.qkv(x).reshape(b, l, 3, h, d).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
         if kv_cache is not None:
             # update k, v
@@ -212,12 +211,11 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.layer_norm1 = nn.LayerNorm(hidden_size)
         self.sa = SelfAttention(hidden_size, num_heads, head_size)
+        self.layer_norm2 = nn.LayerNorm(hidden_size)
         self.feed_forward = nn.Sequential(
             tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False), ),
-            SwiGLU(),
-            tu.constant_init(
-                nn.Linear(2 * hidden_size, hidden_size, bias=False), 0.))
-        self.layer_norm2 = nn.LayerNorm(hidden_size)
+            GEGLU(),
+            tu.xavier(nn.Linear(2 * hidden_size, hidden_size, bias=False)))
 
     def forward(self, x, kv_cache=None):
         x = self.sa(self.layer_norm1(x), kv_cache) + x
