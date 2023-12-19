@@ -83,8 +83,8 @@ class Rotary(torch.nn.Module):
             emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
             self.cos_cached = emb.cos()[:, :]
             self.sin_cached = emb.sin()[:, :]
-        return (*self.apply_rotary_pos_emb(q, k, self.cos_cached,
-                                           self.sin_cached), v)
+        return self.apply_rotary_pos_emb(q, k, v, self.cos_cached,
+                                         self.sin_cached)
 
     # rotary pos emb helpers:
 
@@ -94,9 +94,9 @@ class Rotary(torch.nn.Module):
             (-x2, x1),
             dim=x1.ndim - 1)  # dim=-1 triggers a bug in torch < 1.8.0
 
-    def apply_rotary_pos_emb(self, q, k, cos, sin):
+    def apply_rotary_pos_emb(self, q, k, v, cos, sin):
         return (q * cos) + (self.rotate_half(q) *
-                            sin), (k * cos) + (self.rotate_half(k) * sin)
+                            sin), (k * cos) + (self.rotate_half(k) * sin), v
 
 
 class ScaledSinosoidal(SinusoidalPositional):
