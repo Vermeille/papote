@@ -1,11 +1,13 @@
 #cython: language_level=3
 #cython: boundscheck=False
 #cython: wraparound=False
+# distutils: language = c++
+# distutils: extra_compile_args = -std=c++20
 import array
 from libc.stdlib cimport rand, RAND_MAX, malloc
 from libcpp.string cimport string
 from libcpp.vector cimport vector
-from libcpp.map cimport map
+from libcpp.unordered_map cimport unordered_map
 from libcpp.pair cimport pair
 from cython.operator cimport dereference as deref
 from typing import List
@@ -129,11 +131,11 @@ cdef class Text:
         cdef int i
         cdef int j
         cdef int size = self.text.size()
-        cdef map[pair[int, int], int] pairs
+        cdef unordered_map[pair[int, int], int] pairs
         cdef pair[int, int] this_pair
         cdef int count
         cdef int max_count = 0
-        cdef map[pair[int, int], int].iterator it
+        cdef unordered_map[pair[int, int], int].iterator it
         cdef pair[int, int] max_pair = pair[int, int](0, 0)
         cdef int* t = self.text.data()
         i = Text.skip(0, t, size)
@@ -168,7 +170,7 @@ cdef class Text:
         cdef int* t = self.text.data()
         cdef int token = 0
         cdef int count = 0
-        for i in range(size):
+        for i in range(size - 2):
             if t[i] == 0xEE or t[i] == 0xEF:
                 token = 0xE if t[i] == 0xEE else 0xF
                 token <<= 6
