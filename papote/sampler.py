@@ -304,7 +304,6 @@ class TokenHealer:
                     tokens) > 1:
                 continuation = self.vocab[tokens[-1]] + continuation
                 tokens = tokens[:-1]
-            print(f'rolled back, Continuation: {continuation}')
         else:
             if self.continuation == b'':
                 self.candidates = None
@@ -312,14 +311,10 @@ class TokenHealer:
             assert (self.continuation.startswith(self.vocab[tokens[-1]])
                     or self.vocab[tokens[-1]].startswith(self.continuation))
             continuation = self.continuation[len(self.vocab[tokens[-1]]):]
-            print(f'Continuation: {continuation}')
 
         # restore unambiguous tokens from the continuation
         next_tokens, candidates, continuation = tokenize_continuation(
             self.vocab, continuation)
-        print(
-            f'{next_tokens=} {continuation=} candidates={[self.vocab[c] for c in candidates]}'
-        )
         tokens += next_tokens
         # set candidates
         self.candidates = candidates
