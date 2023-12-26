@@ -1,8 +1,10 @@
+import tqdm
 import torch
 import random
 import os
 from papote.bpe import BPE, Text, clean_private_unicode
 import torch.nn.functional as F
+from torch.utils.data import IterableDataset
 
 
 class TextSampler:
@@ -153,7 +155,7 @@ class CleanPrivateUnicode:
         return clean_private_unicode(text)
 
 
-class TextDirSampler:
+class ChunkSampler(IterableDataset):
 
     def __init__(self,
                  directory,
@@ -161,14 +163,19 @@ class TextDirSampler:
                  start_of_file_token,
                  transform,
                  to_input_and_target=NextTokenObjective()):
+        self.num_tokens = num_tokens
+        self.start_of_file_token = start_of_file_token
+        self.transform = transform
+        self.to_input_and_target = to_input_and_target
+
         # load list of files to ignore from directory/ignore.txt
         ignore_path = os.path.join(directory, 'ignore.txt')
         ignore = set()
         if os.path.exists(ignore_path):
             with open(ignore_path, 'r') as f:
-                ignore = ignore | set(f.read().split('\n'))
+                ignore = set(f.read().split('\n'))
         # recursively iterate over all files in directory
-        self.samples = []
+        self.files = []
         nchars = 0
         for root, dirs, files in os.walk(directory):
             for file in files:
@@ -176,55 +183,27 @@ class TextDirSampler:
                 if fpath in ignore:
                     print('ignoring', fpath)
                     continue
-                with open(fpath, 'r', errors='ignore') as f:
-                    try:
-                        txt = f.read()
-                    except UnicodeDecodeError:
-                        print('utf8 error', fpath)
-                        continue
-                    nchars += len(txt)
-                    self.samples.append((fpath, len(txt), nchars))
+                self.files.append(fpath)
 
-        self.num_tokens = num_tokens
-        self.start_of_file_token = start_of_file_token
-        self.transform = transform
-        self.to_input_and_target = to_input_and_target
+        random.shuffle(self.files)
+        print('found', len(self.files), 'files')
 
-    def __len__(self):
-        return self.samples[-1][2] // (self.num_tokens * 10)
+    def __iter__(self):
+        return self.generate()
 
-    def _read_file(self, i):
-        # find the file that contains the ith character
-        idx = 0
-        for sample in self.samples:
-            if i < sample[1]:
-                break
-            i -= sample[1]
-            idx += 1
-
-        # read the file
-        path = self.samples[idx][0]
-        with open(path, 'r', errors='ignore') as f:
-            f.seek(i)
-            # we consider that a token is ~30 characters
-            text = f.read(self.num_tokens * 30)
-            if i == 0:
-                text = self.start_of_file_token + text
-            else:
-                try:
-                    text = text[text.find('\n') + 1:]
-                except ValueError:
-                    pass
-            text = '<|SOH|>' + text
-
-        if False and not random.randrange(0, 10) == 9:
-            text = f"<<{path.split('/')[-1].replace('_', ' ')}>>{text}"
-        out = self.transform(text)
-        return out
-
-    def __getitem__(self, i):
-        enc = self._read_file(i * self.num_tokens)
-        return self.to_input_and_target(torch.tensor(enc, dtype=torch.long))
+    def generate(self):
+        worker = torch.utils.data.get_worker_info()
+        progress = (tqdm.tqdm if worker is None or worker.id == 0 else
+                    (lambda x: x))
+        for file in progress(self.files):
+            with open(file, 'r', errors='ignore') as f:
+                content = self.start_of_file_token + f.read()
+            tokens = self.transform(content)
+            for i in range(0, len(tokens), self.num_tokens):
+                out = self.to_input_and_target(
+                    torch.tensor(tokens[i:i + self.num_tokens],
+                                 dtype=torch.long))
+                yield out
 
 
 class Tagger:
