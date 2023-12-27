@@ -246,6 +246,19 @@ class Pad:
         return data + [self.pad_id] * max(0, self.ctx - len(data))
 
 
+class Align:
+
+    def __init__(self, ctx, pad_id):
+        self.ctx = ctx
+        self.pad_id = pad_id
+
+    def __call__(self, data):
+        # align data to a multiple of ctx tokens by adding padding
+        if len(data) % self.ctx != 0:
+            data += [self.pad_id] * (self.ctx - len(data) % self.ctx)
+        return data
+
+
 class SeqWeightedLoss(torch.nn.Module):
 
     def __init__(self, beta=0.999, loss_fn=F.cross_entropy):
