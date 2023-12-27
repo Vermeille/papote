@@ -5,6 +5,7 @@ import os
 from papote.bpe import BPE, Text, clean_private_unicode
 import torch.nn.functional as F
 from torch.utils.data import IterableDataset
+import ftfy
 
 
 class TextSampler:
@@ -284,3 +285,9 @@ def binary_entropy(logits, labels, reduction: str):
     return F.binary_cross_entropy_with_logits(logits,
                                               labels,
                                               reduction=reduction).sum(1)
+
+
+class NFKC:
+
+    def __call__(self, text):
+        return ftfy.fix_text(text, normalization='NFKC')

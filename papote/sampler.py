@@ -3,6 +3,7 @@ from typing import List, Optional
 from contextlib import suppress
 import torch.nn.functional as F
 from papote.text import Text
+from papote.data_utils import NFKC
 
 
 class RawLogits:
@@ -181,6 +182,7 @@ class Sampler:
         kv_cache = None  #[]
         rank = next(model.parameters()).device
         model.eval()
+        prompt = NFKC()(prompt)
         encoded = bpe.encode_text(prompt)
         with suppress(KeyboardInterrupt):
             while not self.stopping_criterion(encoded):

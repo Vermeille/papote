@@ -138,8 +138,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     print('computing chinchilla optimal training time:',
           (basem.num_parameters() * 20) / 1e6, 'M tokens')
 
-    m = torch.compile(basem)
-    print(m)
     if pretrained is not None:
         tch.utils.load_state_dict_forgiving(m,
                                             checkpoint['model'],
@@ -152,47 +150,54 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         with torch.no_grad():
             for rnd_p, p in zip(rnd.parameters(), basem.parameters()):
                 # warm start
-                if len(p.shape) > 1:
+                if False and len(p.shape) > 1:
                     p.data = p.data * 0.3 + rnd_p.data * 0.01
 
         del rnd
 
     if world_size > 1:
+        m = basem  #torch.compile(basem)
         m = DDP(m, device_ids=[rank], output_device=rank)
-    sampler = data.TextDirSampler(
+        #m = FSDP(basem)
+    else:
+        m = torch.compile(basem)
+    print(m)
+    sampler = data.ChunkSampler(
         datapath,
         CTX + 1,
         bpe.unicode_for_special('<|SOH|>'),
         Compose([
+            data.NFKC(),
             data.CleanPrivateUnicode(),
             data.Tokenize(bpe, bpe.specials['<|DC3|>'], dropout_p=0.00),
-            data.Crop(CTX + 1),
-            data.Pad(CTX + 1, bpe.specials['<|EOT|>']),
+            data.Align(CTX + 1, bpe.specials['<|EOT|>']),
             #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())
     #RandomPad(bpe.specials['<|THINK|>']))
 
-    random_sampler = torch.utils.data.WeightedRandomSampler(
-        [1] * len(sampler),
-        LOCAL_BS * 1000,
-        generator=torch.Generator().manual_seed(42 + rank))
+    #random_sampler = torch.utils.data.WeightedRandomSampler( [1] * len(sampler), LOCAL_BS * 1000, generator=torch.Generator().manual_seed(42 + rank))
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
-    train_loader = DataLoader(sampler,
-                              LOCAL_BS,
-                              sampler=random_sampler,
-                              num_workers=16,
-                              drop_last=True,
-                              pin_memory=True,
-                              persistent_workers=True)
+    train_loader = DataLoader(
+        sampler,
+        LOCAL_BS,
+        #sampler=random_sampler,
+        num_workers=1,
+        drop_last=True,
+        pin_memory=True,
+        persistent_workers=True)
 
-    epochs = round(basem.num_parameters() * 20 * chinchilla_factor /
-                   (len(train_loader) * CTX * LOCAL_BS * world_size) + 1)
-    print('#iter',
-          len(train_loader) * epochs, 'len(dataset)',
-          len(train_loader.dataset), 'bs', LOCAL_BS, 'accum', ACCUMULATION,
-          '#tokens',
-          len(train_loader) * epochs * CTX * LOCAL_BS * world_size / 1e6, 'M')
+    if False:
+        epochs = round(basem.num_parameters() * 20 * chinchilla_factor /
+                       (len(train_loader) * CTX * LOCAL_BS * world_size) + 1)
+        print('#iter',
+              len(train_loader) * epochs, 'len(dataset)',
+              len(train_loader.dataset), 'bs', LOCAL_BS, 'accum', ACCUMULATION,
+              '#tokens',
+              len(train_loader) * epochs * CTX * LOCAL_BS * world_size / 1e6,
+              'M')
+    print('bs', LOCAL_BS, 'accum', ACCUMULATION)
+    epochs = 1
 
     # weight decay from Cramming paper: 0.01
     # weight decay from LLaMA: 0.1
@@ -200,7 +205,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     optimizer = AdamW([{
         'params': params,
         'lr': lr,
-        'weight_decay': 0.01 if decayable else 0.0
+        'weight_decay': 0.1 if decayable else 0.0
     } for (decayable, fan_in), params in basem.mu_parametrization().items()],
                       betas=(0.9, 0.95))  # transformer++ betas
 
@@ -232,7 +237,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             outs = []
             for _ in range(10):
                 sample = default_sampler(basem, bpe, length=CTX)
-                outs.append(sample.sample('<|SOH|>Le'))
+                outs.append(sample.sample('<|SOH|>'))
 
         state = {'metrics': {}}
         test_loss = 0
@@ -270,18 +275,19 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         test_fun,
         train_loader,
         log_every=10,
-        test_every=1000,
+        test_every=500,
         checkpoint=f"model_{model_size}" if rank == 0 else None,
         visdom_env=f'mylm_{model_size}-lr={lr}'
         f'{"-finetune" if pretrained is not None else ""}'
         if rank == 0 else None)
     recipe.callbacks.add_callbacks([
-        tcb.LRSched(tch.lr_scheduler.CosineDecay(
-            optimizer,
-            len(train_loader) * round(epochs),
-            warmup_ratio=0.05 if pretrained is None else 0.0),
-                    metric=None,
-                    step_each_batch=True),
+        tcb.LRSched(
+            tch.lr_scheduler.CosineDecay(
+                optimizer,
+                10_000 * epochs,  #len(train_loader) * round(epochs),
+                warmup_ratio=0.05 if pretrained is None else 0.0),
+            metric=None,
+            step_each_batch=True),
         tcb.Optimizer(optimizer,
                       log_lr=True,
                       clip_grad_norm=0.5,
