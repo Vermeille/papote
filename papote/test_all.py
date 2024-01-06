@@ -66,7 +66,22 @@ def test_simple_fim():
                             p=1)(text)))
 
 
-if __name__ == '__main__':
+def test_controled():
+    vocab = [b'bonjour ', b'tout ', b'le ', b'tout le ', b'tout le monde']
+    candidates = candidates_for_continuation(vocab, b'bonjour tout le')
+    assert candidates == [0]
+    candidates = candidates_for_continuation(vocab, b'tout le')
+    assert candidates == [4, 3, 1]
+
+    base, candidates, continuation = tokenize_continuation(
+        vocab, b'bonjour tout le')
+    print([vocab[c] for c in base], [vocab[c] for c in candidates],
+          continuation)
+    assert base == [0]
+    assert candidates == [4, 3, 1]
+
+
+if False and __name__ == '__main__':
     #test_sampler()
     #test_bpe_dropout()
     #test_special_tokens()
@@ -95,3 +110,6 @@ if __name__ == '__main__':
     s = sampler[0]
     print(bpe.decode_text(s[0]))
     print(bpe.decode_text(s[1]))
+
+if __name__ == '__main__':
+    test_controled()

@@ -85,7 +85,7 @@ current_story = ''
 def start_background_thread(req):
     global thread
     global current_story
-    opts = Options(512)
+    opts = Options(model.context_size.item())
     prompt = req['prompt']
     opts.cfg = float(req.get('cfg', opts.cfg))
     opts.temperature = 0.3
@@ -156,8 +156,8 @@ def index():
     <button id="send" onclick="generate()">Send</button>
     <label>
         CFG:
-        <input type="range" id="cfg" placeholder="cfg" value="2" min="0.0" max="10" step="0.1" oninput="this.nextElementSibling.value = this.value">
-        <output>2</output>
+        <input type="range" id="cfg" placeholder="cfg" value="1" min="0.0" max="10" step="0.1" oninput="this.nextElementSibling.value = this.value">
+        <output>1</output>
     </label>
     <div id="output"></div>
     <ul>""" + '\n'.join(
@@ -214,7 +214,6 @@ function generate() {
 if __name__ == '__main__':
     # Load the BPE
     checkpoint = torch.load(sys.argv[1], map_location='cpu')
-    CTX = 512  #checkpoint['model']['positional_embedding'].shape[1]
 
     bpe = BPE()
     bpe.load_state_dict(checkpoint['bpe'])
@@ -222,8 +221,8 @@ if __name__ == '__main__':
     # Load the model
     model = transformer_from_checkpoint(checkpoint)
     model.eval()
-    modelc = torch.compile(model)
-    modelc.load_state_dict(checkpoint['model'])
+    modelc = model  #torch.compile(model)
+    print(modelc.load_state_dict(checkpoint['model']))
     del checkpoint
 
     # Sample from the model

@@ -108,10 +108,11 @@ class LogCtxLoss:
 
 def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
           batch_size, global_batch_size, rank, world_size):
+    torch.cuda.set_device(rank)
     FULL_BS = global_batch_size
     LOCAL_BS = batch_size
     CTX = 256
-    ACCUMULATION = int(round(FULL_BS / (LOCAL_BS * CTX * world_size)))
+    ACCUMULATION = int(max(1, round(FULL_BS / (LOCAL_BS * CTX * world_size))))
 
     if pretrained is not None:
         checkpoint = torch.load(pretrained, map_location='cpu')
@@ -142,19 +143,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         tch.utils.load_state_dict_forgiving(m,
                                             checkpoint['model'],
                                             fit_dst_size=True)
-        rnd = make_transformer(model_size,
-                               m.context_size,
-                               m.positional_embedding.shape[1],
-                               dropout=0.0).to(rank)
-
-        with torch.no_grad():
-            for rnd_p, p in zip(rnd.parameters(), basem.parameters()):
-                # warm start
-                if False and len(p.shape) > 1:
-                    p.data = p.data * 0.3 + rnd_p.data * 0.01
-
-        del rnd
-
     if world_size > 1:
         m = basem  #torch.compile(basem)
         m = DDP(m, device_ids=[rank], output_device=rank)
@@ -165,7 +153,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     sampler = data.ChunkSampler(
         datapath,
         CTX + 1,
-        bpe.unicode_for_special('<|SOH|>'),
+        '<|SOH|>',
         Compose([
             data.NFKC(),
             data.CleanPrivateUnicode(),
@@ -174,30 +162,22 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
             #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())
-    #RandomPad(bpe.specials['<|THINK|>']))
 
-    #random_sampler = torch.utils.data.WeightedRandomSampler( [1] * len(sampler), LOCAL_BS * 1000, generator=torch.Generator().manual_seed(42 + rank))
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
-    train_loader = DataLoader(
-        sampler,
-        LOCAL_BS,
-        #sampler=random_sampler,
-        num_workers=1,
-        drop_last=True,
-        pin_memory=True,
-        persistent_workers=True)
+    train_loader = DataLoader(sampler,
+                              LOCAL_BS,
+                              num_workers=1,
+                              drop_last=True,
+                              pin_memory=True,
+                              persistent_workers=True)
 
-    if False:
-        epochs = round(basem.num_parameters() * 20 * chinchilla_factor /
-                       (len(train_loader) * CTX * LOCAL_BS * world_size) + 1)
-        print('#iter',
-              len(train_loader) * epochs, 'len(dataset)',
-              len(train_loader.dataset), 'bs', LOCAL_BS, 'accum', ACCUMULATION,
-              '#tokens',
-              len(train_loader) * epochs * CTX * LOCAL_BS * world_size / 1e6,
-              'M')
+    # chinchilla advises 20 tokens per parameter, without counting the
+    # embeddings
+    num_iters = round(basem.num_parameters_without_embeddings() * 20 *
+                      chinchilla_factor / (CTX * LOCAL_BS * world_size) + 1)
+    print('#iter', num_iters, 'bs', LOCAL_BS, 'accum', ACCUMULATION, '#tokens',
+          num_iters * CTX * LOCAL_BS * world_size / 1e6, 'M')
     print('bs', LOCAL_BS, 'accum', ACCUMULATION)
-    epochs = 1
 
     # weight decay from Cramming paper: 0.01
     # weight decay from LLaMA: 0.1
@@ -281,13 +261,12 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         f'{"-finetune" if pretrained is not None else ""}'
         if rank == 0 else None)
     recipe.callbacks.add_callbacks([
-        tcb.LRSched(
-            tch.lr_scheduler.CosineDecay(
-                optimizer,
-                10_000 * epochs,  #len(train_loader) * round(epochs),
-                warmup_ratio=0.05 if pretrained is None else 0.0),
-            metric=None,
-            step_each_batch=True),
+        tcb.LRSched(tch.lr_scheduler.CosineDecay(
+            optimizer,
+            num_iters,
+            warmup_ratio=0.05 if pretrained is None else 0.0),
+                    metric=None,
+                    step_each_batch=True),
         tcb.Optimizer(optimizer,
                       log_lr=True,
                       clip_grad_norm=0.5,
@@ -311,7 +290,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     recipe.register('model_type', model_size)
     recipe.register('bpe', bpe)
     recipe.to(rank)
-    recipe.run(round(epochs))
+    recipe.run(1)
 
 
 if __name__ == '__main__':
