@@ -14,12 +14,11 @@ from torchvision.transforms import Compose
 from papote.sampler import default_sampler
 from papote.model import make_transformer
 import papote.data_utils as data
-from papote.bpe import BPE, Text
+from papote.bpe import BPE
 import papote.metrics as metrics
 
 
 class BestAndWorst:
-
     def __init__(self, bpe, k=5):
         super().__init__()
         self.bpe = bpe

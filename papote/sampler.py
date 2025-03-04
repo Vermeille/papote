@@ -2,7 +2,6 @@ import torch
 from typing import List, Optional
 from contextlib import suppress
 import torch.nn.functional as F
-from papote.text import Text
 from papote.data_utils import NFKC
 
 

@@ -2,7 +2,6 @@ import tqdm
 import torch
 import random
 import os
-from papote.bpe import BPE, Text, clean_private_unicode
 import torch.nn.functional as F
 from torch.utils.data import IterableDataset
 import ftfy
@@ -148,12 +147,6 @@ class NextTokenObjective:
             return x[:-1], x[1:].clone()
         else:
             return x[:-1], list(x[1:])
-
-
-class CleanPrivateUnicode:
-
-    def __call__(self, text):
-        return clean_private_unicode(text)
 
 
 class ChunkSampler(IterableDataset):
