@@ -1,7 +1,8 @@
+import torch
 import os
 from tokenizers import ByteLevelBPETokenizer
-from tokenizers import normalizers
 from tokenizers.normalizers import NFKC
+from papote.utils import txt_extensions
 
 
 class BPE:
@@ -9,6 +10,10 @@ class BPE:
         self.tokenizer = ByteLevelBPETokenizer()
         self.tokenizer.normalizer = NFKC()
         self.specials = {}
+
+    @property
+    def vocab(self):
+        return self.tokenizer.get_vocab()
 
     @staticmethod
     def load(directory):
@@ -27,6 +32,8 @@ class BPE:
         return self.tokenizer.encode(text).ids
 
     def decode_text(self, ids):
+        if isinstance(ids, torch.Tensor):
+            ids = ids.tolist()
         return self.tokenizer.decode(ids)
 
     def state_dict(self):
@@ -45,16 +52,6 @@ class BPE:
         Gathers all files in the given directory (recursively) and trains the tokenizer.
         The extra parameters (simultaneous_merges, num_threads, merge_all) are ignored.
         """
-        txt_extensions = [
-            ".txt",
-            ".json",
-            ".csv",
-            ".tsv",
-            ".epub",
-            ".pdf",
-            ".docx",
-            ".py",
-        ]
         files = []
         for root, _, filenames in os.walk(directory):
             for file in filenames:
@@ -75,6 +72,7 @@ class BPE:
             "<|BS|>",
             "<|HT|>",
             "<|LF|>",
+            "<|EOT|>",
         ]
         print(f"Training on {len(files)} files.")
         self.tokenizer.train(
@@ -87,6 +85,9 @@ class BPE:
         for token in default_specials:
             self.specials[token] = self.tokenizer.get_vocab().get(token, None)
 
+    def token_to_id(self, token):
+        return self.tokenizer.get_vocab().get(token, None)
+
     def add_special(self, special: str, idx=None):
         """
         Adds a special token.
@@ -97,6 +98,7 @@ class BPE:
             self.tokenizer.add_special_tokens([special])
         if idx is not None:
             # Force assignment in the internal vocab dictionaries.
-            self.tokenizer._token_to_id[special] = idx
-            self.tokenizer._id_to_token[idx] = special
+            self.tokenizer.get_vocab()[special] = idx
+            # self.tokenizer.token_to_id[special] = idx
+            # self.tokenizer._id_to_token[idx] = special
         self.specials[special] = self.tokenizer.get_vocab()[special]

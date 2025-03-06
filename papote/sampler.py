@@ -356,7 +356,7 @@ def default_sampler(model,
         policy.append(PromptCFG(model, cfg, bpe))
 
     policy += [
-        healer,
+        #healer,
         #ForbiddenLogits([ bpe.specials['<|SYN|>'], bpe.specials['<|ETB|>'], bpe.specials['<|NAK|>'] ])
     ]
     policy += [
@@ -374,4 +374,5 @@ def default_sampler(model,
                    bpe,
                    logits_policy=LogitsComposite(*policy),
                    stopping_criterion=StopTooLong(length),
-                   prompt_processor=healer)
+                   #prompt_processor=healer
+                   )

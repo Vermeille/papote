@@ -5,6 +5,7 @@ import os
 import torch.nn.functional as F
 from torch.utils.data import IterableDataset
 import ftfy
+from papote.utils import txt_extensions
 
 
 class TextSampler:
@@ -95,7 +96,6 @@ class Tokenize:
         self.bpe = bpe
         self.dropout = dropout
         self.dropout_p = dropout_p
-        self.dropout_token = dropout_token
 
     def __call__(self, text):
         if random.uniform(0, 1) < self.dropout_p:
@@ -174,6 +174,8 @@ class ChunkSampler(IterableDataset):
         for root, dirs, files in os.walk(directory):
             for file in files:
                 fpath = os.path.join(root, file)
+                if not any(file.lower().endswith(ext) for ext in txt_extensions):
+                    continue
                 if fpath in ignore:
                     print('ignoring', fpath)
                     continue

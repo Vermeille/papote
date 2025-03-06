@@ -65,7 +65,7 @@ class SinusoidalPositional(torch.nn.Module):
 
 class Rotary(torch.nn.Module):
 
-    def __init__(self, dim, base=10000):
+    def __init__(self, dim, base=100000):
         super().__init__()
         inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)

@@ -34,7 +34,7 @@ class BestAndWorst:
     def on_batch_end(self, state):
         all = self.best + self.worst + list(
             zip(state['loss_per_sentence'],
-                (self.bpe.decode_text(xx) for xx in state['batch'][0])))
+                (self.bpe.decode_text(xx) for xx in state['batch'][0].tolist())))
         all.sort(key=lambda x: -x[0])
         self.worst = all[:self.k]
         self.best = all[-self.k:]
@@ -125,9 +125,9 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         bpe = BPE()
         bpe.load_state_dict(checkpoint['bpe'])
     bpe.add_special('<|THINK|>', 5)
-    bpe.add_special('<|SUFFIX|>', bpe.specials['<|NAK|>'])
-    bpe.add_special('<|PREFIX|>', bpe.specials['<|SYN|>'])
-    bpe.add_special('<|WRAP|>', bpe.specials['<|ETB|>'])
+    bpe.add_special('<|SUFFIX|>')
+    bpe.add_special('<|PREFIX|>')
+    bpe.add_special('<|WRAP|>')
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX).to(rank)
 
@@ -155,9 +155,8 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         '<|SOH|>',
         Compose([
             data.NFKC(),
-            data.CleanPrivateUnicode(),
-            data.Tokenize(bpe, bpe.specials['<|DC3|>'], dropout_p=0.00),
-            data.Align(CTX + 1, bpe.specials['<|EOT|>']),
+            data.Tokenize(bpe, None, dropout_p=0.00),
+            data.Align(CTX + 1, bpe.token_to_id('<|EOT|>')),
             #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())
@@ -189,7 +188,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                       betas=(0.9, 0.95))  # transformer++ betas
 
     scaler = torch.cuda.amp.GradScaler()
-    loss_fn = data.SeqWeightedLoss(0.99, loss_fn=data.binary_entropy)
+    loss_fn = data.SeqWeightedLoss(0.99, loss_fn=F.cross_entropy)
 
     def train_fun(batch):
         x, y = batch
@@ -199,9 +198,10 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         scaler.scale(loss.mean() / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
-            torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu()]))
+            torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()]))
+        print("pred", pred.shape)
         return {
-            'pred': pred.detach(),
+            'pred': pred.detach().transpose(1, 2),
             'loss_at_pos': LogCtxLoss(loss.mean(dim=0)),
             'loss_per_sentence': loss.mean(dim=1),
             'pos_weight': LogCtxLoss(loss_fn.weight),
@@ -232,7 +232,8 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                                    reduction='none').mean()
             # get loss per char to account for different tokenizations
             loss *= x.shape[0] / len(bpe.decode_text(x))
-            state['pred'] = preds
+            print(preds.shape)
+            state['pred'] = preds.transpose(1, 2)
             state['batch'] = (None, xgpu[None, 1:])
             topk.on_batch_end(state)
             del xgpu
@@ -287,9 +288,9 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     ])
     recipe.register('loss_fn', loss_fn)
     recipe.register('model_type', model_size)
-    recipe.register('bpe', bpe)
+    #recipe.register('bpe', bpe)
     recipe.to(rank)
-    recipe.run(1)
+    recipe.run(100)
 
 
 if __name__ == '__main__':
@@ -297,7 +298,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--chinchilla-factor', type=float, default=1.0)
-    parser.add_argument('--model', default='xxs')
+    parser.add_argument('--model', default='fim-xxs')
     parser.add_argument('--pretrained')
     parser.add_argument('--bpe')
     parser.add_argument('--batch-size', type=int, default=32)
