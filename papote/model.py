@@ -129,8 +129,8 @@ class SelfAttention(nn.Module):
         self.qkv = tu.normal_init(
             nn.Linear(hidden_size, head_size * num_heads * 3, bias=False),
             math.sqrt(2 / (5 * hidden_size)))
-        self.fc = tu.xavier(
-            nn.Linear(head_size * num_heads, hidden_size, bias=False))
+        self.fc = tu.constant_init(
+            nn.Linear(head_size * num_heads, hidden_size, bias=False), 0.0)
         self.rotary = Rotary(head_size)
 
     def forward(self, x, kv_cache=None):
@@ -209,11 +209,11 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, hidden_size, num_heads, head_size):
         super().__init__()
-        self.layer_norm1 = nn.LayerNorm(hidden_size)
+        self.layer_norm1 = nn.RMSNorm(hidden_size, elementwise_affine=False)
         self.sa = SelfAttention(hidden_size, num_heads, head_size)
-        self.layer_norm2 = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.RMSNorm(hidden_size, elementwise_affine=False)
         self.feed_forward = nn.Sequential(
-            tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False), ),
+            tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False)),
             GEGLU(),
             tu.xavier(nn.Linear(2 * hidden_size, hidden_size, bias=False)))
 
@@ -231,7 +231,6 @@ class TokenDict(nn.Module):
         self.hidden_size = hidden_size
         self.token_embedding = nn.Embedding(num_tokens, hidden_size)
         self.unembed = nn.Linear(hidden_size, num_tokens, bias=False)
-        self.layer_norm_out = nn.LayerNorm(hidden_size)
 
         with torch.no_grad():
             nn.init.normal_(self.token_embedding.weight, 0, 0.02)
@@ -246,7 +245,7 @@ class TokenDict(nn.Module):
         if embed:
             return self.token_embedding(input_ids)
         else:
-            return self.unembed(self.layer_norm_out(latents))
+            return self.unembed(latents)
 
 
 class Pad(nn.Module):
@@ -322,7 +321,7 @@ class Transformer(nn.Module):
         super().__init__()
         self.register_buffer('context_size', torch.tensor(context_size))
         self.token_embedding = TokenDict(num_tokens, hidden_size)
-        self.layer_norm_in = nn.LayerNorm(hidden_size)
+        self.layer_norm_in = nn.RMSNorm(hidden_size, elementwise_affine=False)
 
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(hidden_size, num_heads, head_size)
