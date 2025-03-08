@@ -34,7 +34,7 @@ class BestAndWorst:
     def on_batch_end(self, state):
         all = self.best + self.worst + list(
             zip(state['loss_per_sentence'],
-                (self.bpe.decode_text(xx) for xx in state['batch'][0].tolist())))
+                (self.bpe.decode_text(xx) for xx in state['batch'][0])))
         all.sort(key=lambda x: -x[0])
         self.worst = all[:self.k]
         self.best = all[-self.k:]
@@ -124,10 +124,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         print('Using BPE from checkpoint')
         bpe = BPE()
         bpe.load_state_dict(checkpoint['bpe'])
-    bpe.add_special('<|THINK|>', 5)
-    bpe.add_special('<|SUFFIX|>')
-    bpe.add_special('<|PREFIX|>')
-    bpe.add_special('<|WRAP|>')
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX).to(rank)
 
@@ -156,7 +152,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         Compose([
             data.NFKC(),
             data.Tokenize(bpe, None, dropout_p=0.00),
-            data.Align(CTX + 1, bpe.token_to_id('<|EOT|>')),
+            data.Align(CTX + 1, bpe.token_to_id('<|NUL|>')),
             #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
         to_input_and_target=data.NextTokenObjective())

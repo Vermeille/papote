@@ -102,7 +102,7 @@ class Tokenize:
             text = self.dropout_token + text
             return self.bpe.encode_text(text, dropout=self.dropout)
         else:
-            return self.bpe.encode_text(text)
+            return self.bpe.encode_text(text + '<|EOT|>')
 
 
 class Crop:

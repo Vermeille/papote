@@ -1,14 +1,12 @@
 import torch
 import os
-from tokenizers import ByteLevelBPETokenizer
-from tokenizers.normalizers import NFKC
+from tokenizers import ByteLevelBPETokenizer, Tokenizer
 from papote.utils import txt_extensions
 
 
 class BPE:
     def __init__(self):
-        self.tokenizer = ByteLevelBPETokenizer()
-        self.tokenizer.normalizer = NFKC()
+        self.tokenizer = ByteLevelBPETokenizer(unicode_normalizer="nfkc")
         self.specials = {}
 
     @property
@@ -16,12 +14,9 @@ class BPE:
         return self.tokenizer.get_vocab()
 
     @staticmethod
-    def load(directory):
+    def load(directory, writeable=False):
         self = BPE()
-        self.tokenizer = ByteLevelBPETokenizer.from_file(
-            directory + "/vocab.json", directory + "/merges.txt"
-        )
-        self.tokenizer.normalizer = NFKC()
+        self.tokenizer = Tokenizer.from_file(directory)
         return self
 
     def tokenize(self, text):
@@ -43,8 +38,7 @@ class BPE:
         }
 
     def save(self, directory):
-        os.makedirs(directory, exist_ok=True)
-        self.tokenizer.save_model(directory)
+        self.tokenizer.save(directory)
 
     def learn(self, directory, target_vocab_size=4096, min_frequency=2):
         """
@@ -71,7 +65,6 @@ class BPE:
             "<|BEL|>",
             "<|BS|>",
             "<|HT|>",
-            "<|LF|>",
             "<|EOT|>",
         ]
         print(f"Training on {len(files)} files.")
@@ -88,17 +81,10 @@ class BPE:
     def token_to_id(self, token):
         return self.tokenizer.get_vocab().get(token, None)
 
-    def add_special(self, special: str, idx=None):
+    def add_special(self, special: str):
         """
         Adds a special token.
-        If idx is provided, we attempt to force the special token to that id (by modifying internal dictionaries).
-        (This is not officially supported by HF tokenizers, so use with caution.)
         """
         if special not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens([special])
-        if idx is not None:
-            # Force assignment in the internal vocab dictionaries.
-            self.tokenizer.get_vocab()[special] = idx
-            # self.tokenizer.token_to_id[special] = idx
-            # self.tokenizer._id_to_token[idx] = special
         self.specials[special] = self.tokenizer.get_vocab()[special]
