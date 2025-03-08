@@ -190,7 +190,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         'lr': lr,
         'weight_decay': 0.1 if decayable else 0.0
     } for (decayable, fan_in), params in basem.mu_parametrization().items()],
-                      betas=(0.9, 0.95))  # transformer++ betas
+                      betas=(0.8, 0.95))  # transformer++ betas
 
     scaler = torch.cuda.amp.GradScaler()
     loss_fn = data.SeqWeightedLoss(0.99, loss_fn=F.cross_entropy)
@@ -200,7 +200,9 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         with torch.autocast('cuda'):
             pred = m(x).float()
         loss = loss_fn(pred.transpose(1, 2), y)
-        scaler.scale(loss.mean() / ACCUMULATION).backward()
+        mask = y.ne(bpe.token_to_id('<|NUL|>'))
+        loss_mean = (loss * mask).sum() / mask.sum()
+        scaler.scale(loss_mean / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
             torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()]))
@@ -208,7 +210,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         return {
             'pred': pred.detach().transpose(1, 2),
             'loss_at_pos': LogCtxLoss(loss.mean(dim=0)),
-            'loss_per_sentence': loss.mean(dim=1),
+            'loss_per_sentence': (loss * mask).sum(dim=1) / mask.sum(dim=1),
             'pos_weight': LogCtxLoss(loss_fn.weight),
             'loss': loss_per_char.item(),
             'ppl': metrics.perplexity(loss_per_char).item(),

@@ -1,7 +1,7 @@
 from typing import Union, get_origin
 
 
-txt_extensions = [
+txt_extensions = {
     ".txt",
     ".json",
     ".csv",
@@ -11,8 +11,10 @@ txt_extensions = [
     ".docx",
     ".py",
     ".md",
-    ".json"
-]
+    ".json",
+    ".xml",
+    ".html"
+}
 
 
 class OptionsBase:
