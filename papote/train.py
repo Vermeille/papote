@@ -190,7 +190,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     } for (decayable, fan_in), params in basem.mu_parametrization().items()],
                       betas=(0.8, 0.95))  # transformer++ betas
 
-    scaler = torch.cuda.amp.GradScaler()
     loss_fn = data.SeqWeightedLoss(0.99, loss_fn=F.cross_entropy)
 
     def train_fun(batch):
@@ -200,7 +199,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         mask = y.ne(bpe.token_to_id('<|NUL|>'))
         loss = loss_fn(pred.transpose(1, 2), y, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
-        scaler.scale(loss_mean / ACCUMULATION).backward()
+        (loss_mean / ACCUMULATION).backward()
         loss_per_char = torch.mean(
             loss.sum(dim=1).cpu() /
             torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()]))
@@ -274,7 +273,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         tcb.Optimizer(optimizer,
                       log_lr=True,
                       clip_grad_norm=0.5,
-                      scaler=scaler,
                       accumulation=ACCUMULATION,
                       grad_multiplier=ACCUMULATION),
         NumTokens(),
