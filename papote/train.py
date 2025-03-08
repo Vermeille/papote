@@ -123,7 +123,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     ACCUMULATION = int(max(1, round(FULL_BS / (LOCAL_BS * CTX * world_size))))
 
     if pretrained is not None:
-        checkpoint = torch.load(pretrained, map_location='cpu')
+        checkpoint = torch.load(pretrained, map_location='cpu', weights_only=False)
 
     if bpe_path is not None:
         print('loading BPE from', bpe_path)
@@ -143,16 +143,17 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     print('computing chinchilla optimal training time:',
           (basem.num_parameters() * 20) / 1e6, 'M tokens')
 
-    if pretrained is not None:
-        tch.utils.load_state_dict_forgiving(m,
-                                            checkpoint['model'],
-                                            fit_dst_size=True)
     if world_size > 1:
         m = basem  #torch.compile(basem)
         m = DDP(m, device_ids=[rank], output_device=rank)
         #m = FSDP(basem)
     else:
         m = torch.compile(basem)
+
+    if pretrained is not None:
+        tch.utils.load_state_dict_forgiving(m,
+                                            checkpoint['model'],
+                                            fit_dst_size=True)
     print(m)
     sampler = data.ChunkSampler(
         datapath,
@@ -199,8 +200,8 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         x, y = batch
         with torch.autocast('cuda'):
             pred = m(x).float()
-        loss = loss_fn(pred.transpose(1, 2), y)
         mask = y.ne(bpe.token_to_id('<|NUL|>'))
+        loss = loss_fn(pred.transpose(1, 2), y, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
         scaler.scale(loss_mean / ACCUMULATION).backward()
         loss_per_char = torch.mean(
@@ -209,7 +210,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         print("pred", pred.shape)
         return {
             'pred': pred.detach().transpose(1, 2),
-            'loss_at_pos': LogCtxLoss(loss.mean(dim=0)),
+            'loss_at_pos': LogCtxLoss((loss * mask).sum(0) / mask.sum(0)),
             'loss_per_sentence': (loss * mask).sum(dim=1) / mask.sum(dim=1),
             'pos_weight': LogCtxLoss(loss_fn.weight),
             'loss': loss_per_char.item(),

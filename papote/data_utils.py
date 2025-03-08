@@ -262,11 +262,11 @@ class SeqWeightedLoss(torch.nn.Module):
         self.beta = beta
         self.loss_fn = loss_fn
 
-    def forward(self, x, y, reduction='none'):
+    def forward(self, x, y, mask, reduction='none'):
         loss = self.loss_fn(x, y, reduction=reduction)
         with torch.no_grad():
-            w = loss.mean(0)
-            w /= loss.median()
+            w = (loss * mask).sum(0) / mask.sum(0)
+            w /= w.median()
             if not hasattr(self, 'weight'):
                 self.register_buffer('weight', w.detach())
             self.weight = self.beta * self.weight + (1 - self.beta) * w

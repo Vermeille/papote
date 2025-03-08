@@ -213,7 +213,7 @@ function generate() {
 
 if __name__ == '__main__':
     # Load the BPE
-    checkpoint = torch.load(sys.argv[1], map_location='cpu')
+    checkpoint = torch.load(sys.argv[1], map_location='cpu', weights_only=False)
 
     bpe = BPE()
     bpe.load_state_dict(checkpoint['bpe'])
