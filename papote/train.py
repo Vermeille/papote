@@ -54,6 +54,15 @@ class BestAndWorst:
             </table>
             """
 
+class NumTokens:
+    def __init__(self):
+        self.num_tokens = 0
+
+    @torch.no_grad()
+    def on_batch_end(self, state):
+        self.num_tokens += state['batch'][0].numel()
+        state['metrics']['num_tokens'] = self.num_tokens
+
 
 class MLMObjective:
 
@@ -269,10 +278,12 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                       scaler=scaler,
                       accumulation=ACCUMULATION,
                       grad_multiplier=ACCUMULATION),
+        NumTokens(),
         tcb.Log('loss', 'loss'),
         tcb.Log('ppl', 'ppl'),
         tcb.Log('loss_at_pos', 'loss_at_pos'),
         tcb.Log('pos_weight', 'pos_weight'),
+        tcb.Log('num_tokens', 'num_tokens'),
         tcb.TopkAccAvg(k=15, post_each_batch=True),
         BestAndWorst(bpe),
     ])
