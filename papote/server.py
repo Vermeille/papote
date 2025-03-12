@@ -1,7 +1,7 @@
 from papote.train import LogCtxLoss
 import os
 from flask import Flask, render_template
-from flask_socketio import SocketIO, send, emit
+from flask_socketio import SocketIO
 import time
 from typing import Optional
 import readline
@@ -40,26 +40,23 @@ class Printer:
         if next_token is None:
             if self.print_prompt:
                 self.send(
-                    '<b>'
-                    + self.bpe.decode_text(prompt, self.separator.encode())
-                    + '</b>'
-                )
+                    '<b>' +
+                    self.bpe.decode_text(prompt, self.separator) +
+                    '</b>')
             self.num_sent += len(prompt)
             return
         color = self.colors[int(min(prob, 0.99) * len(self.colors))]
-        self.send(
-            '<span style="color: ' + color + '">' +
-            self.bpe.vocab[next_token].decode('utf-8', 'ignore') +
-            '</span>'
-        )
+        self.send('<span style="color: ' + color + '">' +
+                  self.bpe.decode_text([next_token]) +
+                  '</span>')
         socketio.sleep(0.01)
         self.num_sent += 1
 
 
 class Options(OptionsBase):
     sep: Optional[str] = ''
-    temperature: float = 0.7
-    top_k: int = 100
+    temperature: float = 0.9
+    top_k: int = 30
     top_p: float = 0.95
     typical_p: Optional[float] = None
     cfg: Optional[float] = 3
@@ -92,7 +89,7 @@ def start_background_thread(req):
     opts = Options(model.context_size.item())
     prompt = req['prompt']
     opts.cfg = float(req.get('cfg', opts.cfg))
-    opts.temperature = 0.3
+    #opts.temperature = 0.3
 
     def ontoken(token):
         global current_story
@@ -116,10 +113,10 @@ def start_background_thread(req):
 @socketio.on('connect')
 def test_connect():
     if thread is None:
-        emit('end', None)
+        socketio.emit('end', None)
     else:
-        emit('start', None)
-    emit('token_generated', current_story)
+        socketio.emit('start', None)
+    socketio.emit('token_generated', current_story)
 
 
 @socketio.on('request')
@@ -225,7 +222,7 @@ if __name__ == '__main__':
     # Load the model
     model = transformer_from_checkpoint(checkpoint)
     model.eval()
-    modelc = model  #torch.compile(model)
+    modelc = torch.compile(model)
     print(modelc.load_state_dict(checkpoint['model']))
     del checkpoint
 
