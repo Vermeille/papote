@@ -29,14 +29,33 @@ class BPE:
     def decode_text(self, ids, separator=None):
         if isinstance(ids, torch.Tensor):
             ids = ids.tolist()
-        text = self.tokenizer.decode(ids)
-        return text if separator is None else text
+
+        if separator is None:
+            return self.tokenizer.decode(ids)
+        else:
+            tokens = [self.tokenizer.decode([i]) for i in ids]
+            return separator.join(tokens)
 
     def state_dict(self):
-        return {
-            "vocab": self.tokenizer.get_vocab(),
-            "merges": self.tokenizer.get_merges(),
-        }
+        import tempfile
+        import json
+
+        with tempfile.NamedTemporaryFile() as f:
+            f.close()
+            self.tokenizer.save(f.name)
+
+            with open(f.name) as fopen:
+                return json.load(fopen)
+
+    def load_state_dict(self, state_dict):
+        import tempfile
+        import json
+
+        with tempfile.NamedTemporaryFile() as f:
+            f.close()
+            with open(f.name, "w") as fopen:
+                json.dump(state_dict, fopen)
+            self.tokenizer = Tokenizer.from_file(f.name)
 
     def save(self, directory):
         self.tokenizer.save(directory)
@@ -90,4 +109,3 @@ class BPE:
         if special not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens([special])
         self.specials[special] = self.tokenizer.get_vocab()[special]
-
