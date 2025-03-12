@@ -137,6 +137,26 @@ class NextTokenObjective:
             return x[:-1], list(x[1:])
 
 
+class ReservoirSampler:
+    def __init__(self, k):
+        self.k = k
+        self.samples = []
+        self.n =0
+
+    def add(self, x):
+        self.n += 1
+        if len(self.samples) < self.k:
+            self.samples.append(x)
+
+    def full(self):
+        return len(self.samples) == self.k
+
+    def sample(self, *, replacement):
+        i = random.randint(0, self.n - 1)
+        out = self.samples[i]
+        self.samples[i] = replacement
+        return out
+
 class ChunkSampler(IterableDataset):
 
     def __init__(self,
@@ -158,7 +178,6 @@ class ChunkSampler(IterableDataset):
                 ignore = set(f.read().split('\n'))
         # recursively iterate over all files in directory
         self.files = []
-        nchars = 0
         for root, dirs, files in os.walk(directory):
             for file in files:
                 fpath = os.path.join(root, file)
@@ -176,6 +195,8 @@ class ChunkSampler(IterableDataset):
         return self.generate()
 
     def generate(self):
+        reservoir = ReservoirSampler(1000)
+
         worker = torch.utils.data.get_worker_info()
         progress = (tqdm.tqdm if worker is None or worker.id == 0 else
                     (lambda x: x))
@@ -187,7 +208,13 @@ class ChunkSampler(IterableDataset):
                 out = self.to_input_and_target(
                     torch.tensor(tokens[i:i + self.num_tokens],
                                  dtype=torch.long))
-                yield out
+                if not reservoir.full():
+                    reservoir.add(out)
+                else:
+                    yield reservoir.sample(replacement=out)
+
+        for out in reservoir.samples:
+            yield out
 
 
 class Tagger:
