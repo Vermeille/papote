@@ -255,6 +255,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         topk.on_epoch_end(state)
 
         basem.train()
+        torch.cuda.empty_cache()
         return {
             'outs': '<hr/>'.join(outs).replace('\n', '<br/>'),
             'loss': test_loss,
