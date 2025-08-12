@@ -1,0 +1,21 @@
+[project]
+name = "papote"
+version = "0.1.0"
+description = "Language-model tooling and experiments"
+authors = [{name = "Papote Team"}]
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchelie",
+    "tokenizers",
+    "tqdm",
+    "ftfy",
+    "flask",
+    "flask-socketio",
+    "colored",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

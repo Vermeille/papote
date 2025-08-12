@@ -1,0 +1,9 @@
+torch
+torchvision
+torchelie
+tokenizers
+tqdm
+ftfy
+flask
+flask-socketio
+colored
