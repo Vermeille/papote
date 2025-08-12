@@ -14,7 +14,7 @@ if __name__ == "__main__":
     test = "<|SOH|>La cible effectue un jet de sauvegarde de Sagesse puis tombe inconsciente. Elle est également immunisée aux dégâts de foudre pour 1 tour.<|EOT|><|NUL|>"
 
     if os.path.exists(args.path):
-        bpe = BPE.load(args.path, writeable=True)
+        bpe = BPE.load(args.path)
     else:
         bpe = BPE()
         bpe.learn(
