@@ -14,3 +14,19 @@ It includes:
 
 Anyway, don't use Papote. It's not meant to be used in production. I'm just
 building skill and understanding. Use HuggingFace.
+
+## Installation
+
+Papote can be installed from source using standard Python packaging tools.
+
+Using `pip`:
+
+```bash
+pip install .
+```
+
+Using [`uv`](https://github.com/astral-sh/uv):
+
+```bash
+uv pip install .
+```
