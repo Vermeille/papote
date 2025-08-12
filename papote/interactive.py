@@ -27,18 +27,22 @@ class Printer:
         self.print_prompt = print_prompt
 
     def __call__(self, prompt, next_token, prob, logit):
-        if not next_token:
+        if next_token is None:
             if self.print_prompt:
-                print(self.bpe.decode_text(prompt, self.separator.encode()),
-                      end=self.separator,
-                      flush=True)
+                print(
+                    self.bpe.decode_text(prompt, self.separator.encode()),
+                    end=self.separator,
+                    flush=True,
+                )
         else:
             color = self.colors[int(min(prob, 0.99) * len(self.colors))]
-            print(fg(color) +
-                  self.bpe.vocab[next_token].decode('utf-8', 'ignore') +
-                  attr('reset'),
-                  end=self.separator,
-                  flush=True)
+            print(
+                fg(color)
+                + self.bpe.vocab[next_token].decode("utf-8", "ignore")
+                + attr("reset"),
+                end=self.separator,
+                flush=True,
+            )
 
 
 class Options(OptionsBase):

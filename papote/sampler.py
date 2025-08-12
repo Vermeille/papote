@@ -184,15 +184,17 @@ class Sampler:
         prompt = NFKC()(prompt)
         encoded = bpe.encode_text(prompt)
         with suppress(KeyboardInterrupt):
+            self.event_handler(encoded, None, None, None)
             while not self.stopping_criterion(encoded):
                 encoded = self.prompt_processor(encoded)
 
                 prompt = torch.tensor(encoded[-self.ctx_len:],
                                       dtype=torch.long)
 
-                logits = F.log_softmax(model((prompt[None]).to(rank),
-                                             kv_cache)[0][-1].float().cpu(),
-                                       dim=-1)
+                logits = F.log_softmax(
+                    model((prompt[None]).to(rank), kv_cache)[0][-1].float().cpu(),
+                    dim=-1,
+                )
                 idx = torch.arange(logits.shape[-1])
 
                 cfg_logits, idx = self.logits_policy(logits, idx, prompt)
@@ -200,8 +202,10 @@ class Sampler:
                 probs = F.softmax(cfg_logits, dim=-1)
                 next_idx = torch.multinomial(probs, 1).item()
                 next_token = idx[next_idx]
+
                 self.event_handler(encoded, next_token, probs[next_idx],
                                    cfg_logits[next_idx])
+
                 encoded.append(next_token)
             return bpe.decode_text(encoded)
 

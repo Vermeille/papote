@@ -37,17 +37,21 @@ class Printer:
         self.num_sent = 0
 
     def __call__(self, prompt, next_token, prob, logit):
-        if self.num_sent == 0:
+        if next_token is None:
             if self.print_prompt:
                 self.send(
-                    '<b>' +
-                    self.bpe.decode_text(prompt, self.separator.encode()) +
-                    '</b>')
+                    '<b>'
+                    + self.bpe.decode_text(prompt, self.separator.encode())
+                    + '</b>'
+                )
             self.num_sent += len(prompt)
+            return
         color = self.colors[int(min(prob, 0.99) * len(self.colors))]
-        self.send('<span style="color: ' + color + '">' +
-                  self.bpe.vocab[next_token].decode('utf-8', 'ignore') +
-                  '</span>')
+        self.send(
+            '<span style="color: ' + color + '">' +
+            self.bpe.vocab[next_token].decode('utf-8', 'ignore') +
+            '</span>'
+        )
         socketio.sleep(0.01)
         self.num_sent += 1
 
