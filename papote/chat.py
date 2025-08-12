@@ -79,7 +79,7 @@ if __name__ == '__main__':
                     sys.exit(0)
                 elif text == '!reset':
                     history = ''
-                elif command == '!history':
+                elif text == '!history':
                     print('\n````')
                     print(history)
                     print('````\n')
