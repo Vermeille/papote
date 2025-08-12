@@ -99,7 +99,7 @@ class Typical:
         typical_probs = F.softmax(logits[idx], dim=-1).cumsum(dim=-1)
 
         typical_probs[0] = 0
-        typical_sorted = typical_sorted[typical_probs < typical_p]
+        typical_sorted = typical_sorted[typical_probs < self.p]
         logits = logits[typical_sorted]
         return logits, idx[typical_sorted]
 
