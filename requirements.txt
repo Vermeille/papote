@@ -8,3 +8,5 @@ flask
 flask-socketio
 colored
 pytest
+crayons
+visdom
