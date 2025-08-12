@@ -208,18 +208,20 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         loss = loss_fn(pred.transpose(1, 2), y, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
         (loss_mean / ACCUMULATION).backward()
-        loss_per_char = torch.mean(
-            loss.sum(dim=1).cpu() /
-            torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()]))
-        print("pred", pred.shape)
-        return {
-            'pred': pred.detach().transpose(1, 2),
-            'loss_at_pos': LogCtxLoss((loss * mask).sum(0) / mask.sum(0)),
-            'loss_per_sentence': (loss * mask).sum(dim=1) / mask.sum(dim=1),
-            'pos_weight': LogCtxLoss(loss_fn.weight),
-            'loss': loss_mean.item(),
-            'ppl': metrics.perplexity(loss_per_char).item(),
-        }
+        with torch.no_grad():
+            loss_per_char = torch.mean(
+                loss.sum(dim=1).cpu()
+                / torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()])
+            )
+            print("pred", pred.shape)
+            return {
+                "pred": pred.detach().transpose(1, 2),
+                "loss_at_pos": LogCtxLoss((loss * mask).sum(0) / mask.sum(0)),
+                "loss_per_sentence": (loss * mask).sum(dim=1) / mask.sum(dim=1),
+                "pos_weight": LogCtxLoss(loss_fn.weight),
+                "loss": loss_mean.item(),
+                "ppl": metrics.perplexity(loss_per_char).item(),
+            }
 
     @torch.no_grad()
     def test_fun():
