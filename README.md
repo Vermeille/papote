@@ -30,3 +30,20 @@ Using [`uv`](https://github.com/astral-sh/uv):
 ```bash
 uv pip install .
 ```
+
+## Development with `uv`
+
+Papote manages its dependencies with [`uv`](https://github.com/astral-sh/uv).
+After cloning the repository, install the project requirements with:
+
+```bash
+uv sync
+```
+
+This creates a `.venv` directory containing all dependencies. Run commands inside
+this environment using `uv run`, for example:
+
+```bash
+uv run python -m papote.test_all  # run the smoke tests
+uv run python papote/chat.py      # start the chat interface
+```
