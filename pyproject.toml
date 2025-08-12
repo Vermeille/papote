@@ -14,6 +14,7 @@ dependencies = [
     "flask",
     "flask-socketio",
     "colored",
+    "pytest",
 ]
 
 [build-system]
@@ -24,3 +25,6 @@ build-backend = "setuptools.build_meta"
 include = ["papote*", "model_specs*"]
 [tool.uv.sources]
 torchelie = { git = "https://github.com/Vermeille/Torchelie.git", rev = "43028e17ab50fb40c21010a52f523c0fcc532d7d" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

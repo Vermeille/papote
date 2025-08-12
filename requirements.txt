@@ -7,3 +7,4 @@ ftfy
 flask
 flask-socketio
 colored
+pytest
