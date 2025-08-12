@@ -26,11 +26,25 @@ contains Python modules describing various transformer configurations.
 - `model_specs/` – example model definitions like `tiny.py` or `chinchilla.py`
   used to instantiate specific transformer configurations.
 
+## Environment
+This project relies on [`uv`](https://github.com/astral-sh/uv) for dependency
+and virtual environment management. Install requirements with:
+
+```bash
+uv sync
+```
+
+Use `uv run` to execute commands inside the project's virtual environment, e.g.:
+
+```bash
+uv run python papote/chat.py
+```
+
 ## Running tests
 Basic smoke tests live in `papote/test_all.py`. Run them with:
 
 ```bash
-python -m papote.test_all
+uv run python -m papote.test_all
 ```
 
 This script exercises tokenization and sampling helpers. Some dependencies such
@@ -38,8 +52,8 @@ as `tqdm`, `torch`, and `torchelie` must be available. If a dependency is
 missing, install it or note the failure in your report.
 
 ## Usage tips
-- Interactive experiments can be launched with `python papote/interactive.py` or
-  the chat interface `python papote/chat.py`.
+- Interactive experiments can be launched with `uv run python papote/interactive.py`
+  or the chat interface `uv run python papote/chat.py`.
 - Model specification examples are in `model_specs/` and can be imported to
   create transformers for training or evaluation.
 - When updating documentation or code, keep the style consistent with existing
