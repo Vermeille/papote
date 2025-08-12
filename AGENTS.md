@@ -11,6 +11,21 @@ contains Python modules describing various transformer configurations.
 - `papote/tokenizer/` includes a C++/Cython BPE implementation. When modifying
   files in this folder, run `make` to rebuild the extension.
 
+## Important files and classes
+- `papote/model.py` – transformer architecture with `Transformer` (full model),
+  `TransformerBlock`, and attention utilities like `SelfAttention` and
+  `Rotary`.
+- `papote/tokenizer/tokenizer.pyx` – BPE tokenizer core defining `Merges`,
+  `Vocab`, and `TextData` classes. Rebuild via `make` after edits.
+- `papote/sampler.py` – text generation helpers such as `Sampler`, `TopK`,
+  `TopP`, `Temperature`, and `ForbiddenTokens`.
+- `papote/train.py` – training utilities including `MLMObjective`,
+  `RandomPad`, and `LogCtxLoss` for masked-language modeling and logging.
+- `papote/chat.py` and `papote/interactive.py` – command line interfaces for
+  chatting or running interactive experiments.
+- `model_specs/` – example model definitions like `tiny.py` or `chinchilla.py`
+  used to instantiate specific transformer configurations.
+
 ## Running tests
 Basic smoke tests live in `papote/test_all.py`. Run them with:
 
