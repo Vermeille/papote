@@ -14,7 +14,7 @@ class BPE:
         return self.tokenizer.get_vocab()
 
     @staticmethod
-    def load(directory, writeable=False):
+    def load(directory):
         self = BPE()
         self.tokenizer = Tokenizer.from_file(directory)
         return self
