@@ -1,15 +1,12 @@
 import html
-import math
 import torch
 import torch.nn.functional as F
 import random
 import torchelie as tch
-from torch.optim import AdamW, SparseAdam
+from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchelie.callbacks as tcb
-import os
-from contextlib import suppress
 from torchvision.transforms import Compose
 from papote.sampler import default_sampler
 from papote.model import make_transformer
@@ -230,7 +227,6 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         test_loss = 0
         topk = tcb.TopkAccAvg(15, False, 'running')
         topk.on_epoch_start(state)
-        total_acc = 0
         for x in test_sampler:
             xgpu = x.to(rank)
             with torch.autocast('cuda'):
