@@ -109,6 +109,39 @@ class Rotary(torch.nn.Module):
         return (q * cos) + (self.rotate_half(q) *
                             sin), (k * cos) + (self.rotate_half(k) * sin), v
 
+class RotarySingle(torch.nn.Module):
+
+    def __init__(self, dim, base=10000):
+        super().__init__()
+        inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer("inv_freq", inv_freq)
+        self.seq_len_cached = 0
+        self.register_buffer("cos_cached", torch.tensor([[1.]]))
+        self.register_buffer("sin_cached", torch.tensor([[1.]]))
+
+    def forward(self, q, seq_dim=-2):
+        seq_len = q.shape[seq_dim]
+        if seq_len > self.seq_len_cached:
+            self.seq_len_cached = seq_len
+            t = torch.arange(q.shape[seq_dim],
+                             device=q.device).type_as(self.inv_freq)
+            freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+            emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
+            self.cos_cached = emb.cos()[:, :]
+            self.sin_cached = emb.sin()[:, :]
+        return self.apply_rotary_pos_emb(q, self.cos_cached, self.sin_cached)
+
+    # rotary pos emb helpers:
+
+    def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
+        x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+        return torch.cat(
+            (-x2, x1),
+            dim=x1.ndim - 1)  # dim=-1 triggers a bug in torch < 1.8.0
+
+    def apply_rotary_pos_emb(self, q: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor)->torch.Tensor:
+        return (q * cos) + (self.rotate_half(q) * sin)
+
 
 class ScaledSinosoidal(SinusoidalPositional):
     """Sinusoidal with scaling (see FLASH paper)."""
@@ -333,6 +366,7 @@ class Transformer(nn.Module):
         self.register_buffer('context_size', torch.tensor(context_size))
         self.token_embedding = TokenDict(num_tokens, hidden_size)
         self.layer_norm_in = nn.RMSNorm(hidden_size, elementwise_affine=False)
+        self.rotary = RotarySingle(hidden_size)
 
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(hidden_size, num_heads, head_size)
@@ -390,6 +424,7 @@ class Transformer(nn.Module):
         outputs = self.token_embedding(input_ids, latents=None, embed=True)
         #pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
         outputs = self.layer_norm_in(outputs)  # + self.pos_norm(pos)
+        outputs = self.rotary(outputs)
 
         def do(f, *args, **kwargs):
             return f(*args, **kwargs)
