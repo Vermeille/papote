@@ -66,8 +66,9 @@ class BPE:
             "<|BEL|>",
             "<|BS|>",
             "<|HT|>",
-            "<|EOT|>",
         ]
+        if len(default_specials) != len(set(default_specials)):
+            raise ValueError("Default special tokens must be unique")
         print(f"Training on {len(files)} files.")
         self.tokenizer.train(
             files=files,
