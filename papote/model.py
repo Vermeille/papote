@@ -83,6 +83,18 @@ class Rotary(torch.nn.Module):
             self.sin_cached = emb.sin()
             self.seq_len_cached = seq_len
         cos, sin = self.cos_cached[:seq_len], self.sin_cached[:seq_len]
+
+        # reshape cos/sin for broadcasting on the sequence dimension
+        ndim = q.ndim
+        seq_dim = seq_dim % ndim
+        # default layout already matches (seq_len, dim)
+        if seq_dim != ndim - 2:
+            shape = [1] * ndim
+            shape[seq_dim] = seq_len
+            shape[-1] = cos.shape[-1]
+            cos = cos.reshape(shape)
+            sin = sin.reshape(shape)
+
         return self.apply_rotary_pos_emb(q, k, v, cos, sin)
 
     # rotary pos emb helpers:

@@ -85,7 +85,6 @@ def test_forward_reuses_cache_for_shorter_sequence():
     assert torch.allclose(v_out, v2)
 
 
-@pytest.mark.xfail(reason="Rotary ignores seq_dim argument")
 def test_forward_seq_dim_argument():
     torch.manual_seed(3)
     rot = Rotary(4)
