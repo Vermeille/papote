@@ -83,6 +83,18 @@ class TopP:
         return logits, idx[mask]
 
 
+class MinP:
+
+    def __init__(self, p: float = 0.1):
+        self.p = p
+
+    def __call__(self, logits, idx, prompt):
+        probs = F.softmax(logits, dim=-1)
+        max_probs = probs.max(dim=-1).values
+        keep = probs > max_probs * self.p
+        print('keep', keep.float().sum().item())
+        return logits[keep], idx[keep]
+
 class Typical:
 
     def __init__(self, p: Optional[float]):
