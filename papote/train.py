@@ -161,7 +161,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         '<|SOH|>',
         Compose([
             data.NFKC(),
-            data.Tokenize(bpe, None, dropout_p=0.00),
+            data.Tokenize(bpe),
             data.Align(CTX + 1, bpe.token_to_id('<|NUL|>')),
             #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
         ]),
