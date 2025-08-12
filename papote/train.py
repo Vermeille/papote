@@ -104,11 +104,19 @@ class LogCtxLoss:
         self.loss = loss
 
     def to_visdom(self, vis, name):
-        vis.line(X=list(range(len(self.loss))),
-                 Y=self.loss,
-                 win=name,
-                 name=name,
-                 opts=dict(title=name))
+        vis.line(
+            X=list(range(len(self.loss))),
+            Y=self.loss,
+            win=name,
+            name=name,
+            opts=dict(title=name),
+        )
+
+    def __pickle__(self):
+        return self.loss
+
+    def __unpickle__(self, loss):
+        self.loss = loss
 
 
 def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
