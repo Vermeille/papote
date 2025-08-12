@@ -1,7 +1,7 @@
-import torch
 import os
 from tokenizers import ByteLevelBPETokenizer, Tokenizer
 from papote.utils import txt_extensions
+import torch
 
 
 class BPE:
@@ -26,10 +26,11 @@ class BPE:
     def encode_text(self, text):
         return self.tokenizer.encode(text).ids
 
-    def decode_text(self, ids):
+    def decode_text(self, ids, separator=None):
         if isinstance(ids, torch.Tensor):
             ids = ids.tolist()
-        return self.tokenizer.decode(ids)
+        text = self.tokenizer.decode(ids)
+        return text if separator is None else text
 
     def state_dict(self):
         return {
@@ -88,3 +89,4 @@ class BPE:
         if special not in self.tokenizer.get_vocab():
             self.tokenizer.add_special_tokens([special])
         self.specials[special] = self.tokenizer.get_vocab()[special]
+

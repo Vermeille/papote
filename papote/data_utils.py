@@ -10,11 +10,10 @@ from papote.utils import txt_extensions
 
 class TextSampler:
 
-    def __init__(self, text, num_tokens, bpe, dropout=0.0):
+    def __init__(self, text, num_tokens, bpe):
         self.text = text
         self.num_tokens = num_tokens
         self.bpe = bpe
-        self.dropout = dropout
 
     def __len__(self):
         return len(self.text) // (10 * self.num_tokens)
@@ -22,8 +21,7 @@ class TextSampler:
     def __getitem__(self, i):
         start = random.randint(0, len(self.text) - self.num_tokens * 10)
         enc = self.bpe.encode_text(
-            self.text[start:start + self.num_tokens * 10],
-            dropout=self.dropout if random.uniform(0, 1) < 0.5 else 0)
+            self.text[start:start + self.num_tokens * 10])
         return torch.tensor(enc[:self.num_tokens], dtype=torch.long)
 
 
@@ -92,17 +90,11 @@ class RandomPromptSplit:
 
 class Tokenize:
 
-    def __init__(self, bpe, dropout_token, dropout=0.1, dropout_p=0.5):
+    def __init__(self, bpe):
         self.bpe = bpe
-        self.dropout = dropout
-        self.dropout_p = dropout_p
 
     def __call__(self, text):
-        if random.uniform(0, 1) < self.dropout_p:
-            text = self.dropout_token + text
-            return self.bpe.encode_text(text, dropout=self.dropout)
-        else:
-            return self.bpe.encode_text(text + '<|EOT|>')
+        return self.bpe.encode_text(text + '<|EOT|>')
 
 
 class Crop:
@@ -134,10 +126,6 @@ class FillInTheMiddle:
         return text
 
 
-def tokens_dropout(tokens, mask_id, dropout_p):
-    return torch.where(
-        torch.rand(*tokens.shape, device=tokens.device) < dropout_p, mask_id,
-        tokens)
 
 
 class NextTokenObjective:
