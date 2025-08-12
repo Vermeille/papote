@@ -195,13 +195,13 @@ class Sampler:
                                        dim=-1)
                 idx = torch.arange(logits.shape[-1])
 
-                logits, idx = self.logits_policy(logits, idx, prompt)
+                cfg_logits, idx = self.logits_policy(logits, idx, prompt)
 
-                probs = F.softmax(logits, dim=-1)
+                probs = F.softmax(cfg_logits, dim=-1)
                 next_idx = torch.multinomial(probs, 1).item()
                 next_token = idx[next_idx]
                 self.event_handler(encoded, next_token, probs[next_idx],
-                                   logits[next_idx])
+                                   cfg_logits[next_idx])
                 encoded.append(next_token)
             return bpe.decode_text(encoded)
 
@@ -246,7 +246,7 @@ class PromptCFG:
         cond_logits = F.log_softmax(logits, dim=-1)
         cfg_logits = self.cfg * cond_logits + (1 -
                                                self.cfg) * unconditional_logits
-        return logits, idx
+        return cfg_logits, idx
 
 
 class ForbiddenLogits:
