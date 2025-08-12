@@ -44,6 +44,6 @@ This creates a `.venv` directory containing all dependencies. Run commands insid
 this environment using `uv run`, for example:
 
 ```bash
-uv run python -m papote.test_all  # run the smoke tests
-uv run python papote/chat.py      # start the chat interface
+uv run pytest                 # run the test suite
+uv run python papote/chat.py  # start the chat interface
 ```

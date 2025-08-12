@@ -41,15 +41,23 @@ uv run python papote/chat.py
 ```
 
 ## Running tests
-Basic smoke tests live in `papote/test_all.py`. Run them with:
+Run the test suite with:
 
 ```bash
-uv run python -m papote.test_all
+uv run pytest
 ```
 
-This script exercises tokenization and sampling helpers. Some dependencies such
-as `tqdm`, `torch`, and `torchelie` must be available. If a dependency is
-missing, install it or note the failure in your report.
+Some tests exercise optional features and will be skipped if dependencies such
+as `torch` or `torchelie` are not installed. Install missing packages or note
+the skips in your report.
+
+## Contribution guidelines
+When submitting pull requests:
+
+- Provide concise, descriptive commit messages.
+- Run `uv run pytest` and include the command and results in the PR description.
+- Ensure documentation and code changes follow the existing style
+  conventions.
 
 ## Usage tips
 - Interactive experiments can be launched with `uv run python papote/interactive.py`
