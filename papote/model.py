@@ -383,12 +383,14 @@ class Transformer(nn.Module):
                  hidden_size,
                  num_layers,
                  num_heads,
-                 head_size,
-                 context_size,
-                 rotary: bool = True,
-                 rotary_single: bool = True):
+                head_size,
+                context_size,
+                rotary: bool = True,
+                rotary_single: bool = True):
         super().__init__()
         self.register_buffer('context_size', torch.tensor(context_size))
+        self.register_buffer('rotary_flag', torch.tensor(rotary))
+        self.register_buffer('rotary_single_flag', torch.tensor(rotary_single))
         self.token_embedding = TokenDict(num_tokens, hidden_size)
         self.layer_norm_in = nn.RMSNorm(hidden_size, elementwise_affine=False)
         self.rotary = (RotarySingle(hidden_size)
@@ -515,7 +517,15 @@ def transformer_from_checkpoint(checkpoint):
     )
     vocab_size = state[token_emb_key].shape[0]
     context_len = int(state.get("context_size", torch.tensor(512)))
-    return make_transformer(checkpoint["model_type"], vocab_size, context_len)
+    rotary = bool(state.get("rotary_flag", torch.tensor(True)).item())
+    rotary_single = bool(state.get("rotary_single_flag", torch.tensor(True)).item())
+    return make_transformer(
+        checkpoint["model_type"],
+        vocab_size,
+        context_len,
+        rotary=rotary,
+        rotary_single=rotary_single,
+    )
 
 def list_models():
     from model_specs.tiny import list_models as tiny
@@ -528,7 +538,7 @@ def list_models():
     }
 
 
-def make_transformer(size, vocab_size, context_len):
+def make_transformer(size, vocab_size, context_len, **kwargs):
     """
     For a vocab size of 4096 and a context of 512:
 
@@ -752,4 +762,9 @@ def make_transformer(size, vocab_size, context_len):
     fim-X models from https://arxiv.org/abs/2207.14255
     """
     models = list_models()
-    return Transformer(vocab_size, context_size=context_len, **models[size])
+    return Transformer(
+        vocab_size,
+        context_size=context_len,
+        **models[size],
+        **kwargs,
+    )

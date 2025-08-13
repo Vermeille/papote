@@ -1,6 +1,13 @@
 import torch
 import torch.nn as nn
-from papote.model import Transformer, Rotary, RotarySingle, NoRotary
+from papote.model import (
+    Transformer,
+    Rotary,
+    RotarySingle,
+    NoRotary,
+    make_transformer,
+    transformer_from_checkpoint,
+)
 
 
 def test_transformer_rotary_flags():
@@ -29,3 +36,17 @@ def test_transformer_rotary_flags():
     )
     assert isinstance(model_no.transformer_blocks[0].sa.rotary, NoRotary)
     assert isinstance(model_no.rotary, nn.Identity)
+
+
+def test_rotary_flags_checkpoint_roundtrip():
+    model = make_transformer(
+        "tiny-1M",
+        vocab_size=10,
+        context_len=8,
+        rotary=False,
+        rotary_single=False,
+    )
+    ckpt = {"model_type": "tiny-1M", "model": model.state_dict()}
+    loaded = transformer_from_checkpoint(ckpt)
+    assert isinstance(loaded.transformer_blocks[0].sa.rotary, NoRotary)
+    assert isinstance(loaded.rotary, nn.Identity)
