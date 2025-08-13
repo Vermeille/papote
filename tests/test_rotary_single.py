@@ -75,3 +75,21 @@ def test_forward_seq_dim_argument():
     q_manual = _manual_rotary(rot, q, seq_dim=1)
     assert torch.allclose(q_rot, q_manual)
 
+
+def test_forward_with_positions_indexes_cache():
+    torch.manual_seed(4)
+    rot = RotarySingle(4)
+    q = torch.randn(2, 5, 4)
+    positions = torch.tensor([[0, 1, 2, 3, 4], [4, 3, 2, 1, 0]])
+    q_rot = rot(q, positions=positions)
+    t = torch.arange(positions.max().item() + 1,
+                    device=q.device).type_as(rot.inv_freq)
+    freqs = torch.einsum("i,j->ij", t, rot.inv_freq)
+    emb = torch.cat((freqs, freqs), dim=-1)
+    cos = emb.cos().index_select(0, positions.reshape(-1)).view(
+        positions.shape + (rot.dim,))
+    sin = emb.sin().index_select(0, positions.reshape(-1)).view(
+        positions.shape + (rot.dim,))
+    q_manual = q * cos + rot.rotate_half(q) * sin
+    assert torch.allclose(q_rot, q_manual)
+
