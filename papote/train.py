@@ -7,12 +7,13 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchelie.callbacks as tcb
-from torchvision.transforms import Compose
+from contextlib import nullcontext
 from papote.sampler import default_sampler
 from papote.model import make_transformer
 import papote.data_utils as data
 from papote.bpe import BPE
 import papote.metrics as metrics
+from papote.experiment import Experiment, ThinkExperiment, FillInTheMiddleExperiment
 
 
 class BestAndWorst:
@@ -119,9 +120,22 @@ class LogCtxLoss:
         self.loss = loss
 
 
-def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
-          batch_size, global_batch_size, rank, world_size):
-    torch.cuda.set_device(rank)
+def train(*,
+          datapath,
+          lr,
+          chinchilla_factor,
+          model_size,
+          pretrained,
+          bpe_path,
+          batch_size,
+          global_batch_size,
+          rank,
+          world_size,
+          experiment='base',
+          max_steps=100):
+    device = torch.device('cuda', rank) if torch.cuda.is_available() else torch.device('cpu')
+    if torch.cuda.is_available():
+        torch.cuda.set_device(rank)
     FULL_BS = global_batch_size
     LOCAL_BS = batch_size
     CTX = 256
@@ -139,7 +153,15 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         bpe = BPE()
         bpe.load_state_dict(checkpoint['bpe'])
 
-    basem = make_transformer(model_size, len(bpe.vocab), CTX).to(rank)
+    exp_cls = {
+        'base': Experiment,
+        'think': ThinkExperiment,
+        'fim': FillInTheMiddleExperiment,
+    }.get(experiment, Experiment)
+    exp = exp_cls(bpe, CTX)
+    bpe = exp.bpe
+
+    basem = make_transformer(model_size, len(bpe.vocab), CTX).to(device)
 
     print(basem.num_parameters() / 1e6, 'M params')
     print(basem.num_parameters_without_embeddings() / 1e6,
@@ -148,8 +170,8 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     print('computing chinchilla optimal training time:',
           (basem.num_parameters() * 20) / 1e6, 'M tokens')
 
-    if world_size > 1:
-        m = basem  #torch.compile(basem)
+    if world_size > 1 and torch.cuda.is_available():
+        m = basem  # torch.compile(basem)
         m = DDP(m, device_ids=[rank], output_device=rank)
         #m = FSDP(basem)
     else:
@@ -164,13 +186,8 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         datapath,
         CTX + 1,
         '<|SOH|>',
-        Compose([
-            data.NFKC(),
-            data.Tokenize(bpe),
-            data.Align(CTX + 1, bpe.token_to_id('<|NUL|>')),
-            #data.FillInTheMiddle(bpe.specials['<|SUFFIX|>'], bpe.specials['<|PREFIX|>'], bpe.specials['<|WRAP|>'], p=0.5),
-        ]),
-        to_input_and_target=data.NextTokenObjective())
+        exp.transforms(),
+        to_input_and_target=exp.objective())
 
     test_sampler = data.EvalDirSampler('test', CTX + 1, bpe)
     train_loader = DataLoader(sampler,
@@ -201,10 +218,12 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
     loss_fn = data.SeqWeightedLoss(0.99, loss_fn=F.cross_entropy)
 
     def train_fun(batch):
-        x, y = batch
-        with torch.autocast('cuda', dtype=torch.bfloat16):
-            pred = m(x).float()
-        mask = y.ne(bpe.token_to_id('<|NUL|>'))
+        x, y = exp.prepare_batch(batch)
+        x, y = x.to(device), y.to(device)
+        cast = torch.autocast('cuda', dtype=torch.bfloat16) if torch.cuda.is_available() else nullcontext()
+        with cast:
+            pred = m(exp.model_inputs(x)).float()
+        mask = exp.loss_mask(x, y)
         loss = loss_fn(pred.transpose(1, 2), y, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
         (loss_mean / ACCUMULATION).backward()
@@ -214,7 +233,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                 / torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()])
             )
             print("pred", pred.shape)
-            return {
+            metrics_dict = {
                 "pred": pred.detach().transpose(1, 2),
                 "loss_at_pos": LogCtxLoss((loss * mask).sum(0) / mask.sum(0)),
                 "loss_per_sentence": (loss * mask).sum(dim=1) / mask.sum(dim=1),
@@ -222,9 +241,13 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
                 "loss": loss_mean.item(),
                 "ppl": metrics.perplexity(loss_per_char).item(),
             }
+            metrics_dict.update(exp.metrics(x, y, loss.detach()))
+            return metrics_dict
 
     @torch.no_grad()
     def test_fun():
+        if not torch.cuda.is_available():
+            return {}
         basem.eval()
         with torch.autocast('cuda', dtype=torch.bfloat16):
             outs = []
@@ -237,7 +260,7 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         topk = tcb.TopkAccAvg(15, False, 'running')
         topk.on_epoch_start(state)
         for x in test_sampler:
-            xgpu = x.to(rank)
+            xgpu = x.to(device)
             with torch.autocast('cuda'):
                 preds = m(xgpu[None, :-1]).float()
             loss = F.cross_entropy(preds.transpose(1, 2),
@@ -273,39 +296,50 @@ def train(*, datapath, lr, chinchilla_factor, model_size, pretrained, bpe_path,
         checkpoint=f"model_{model_size}" if rank == 0 else None,
         visdom_env=f'mylm_{model_size}-lr={lr}'
         f'{"-finetune" if pretrained is not None else ""}'
-        if rank == 0 else None)
-    recipe.callbacks.add_callbacks([
-        tcb.LRSched(tch.lr_scheduler.CosineDecay(
-            optimizer,
-            num_iters,
-            warmup_ratio=0.05 if pretrained is None else 0.0),
-                    metric=None,
-                    step_each_batch=True),
+        if rank == 0 and torch.cuda.is_available() else None)
+    callbacks = [
         tcb.Optimizer(optimizer,
                       log_lr=True,
                       clip_grad_norm=0.5,
                       accumulation=ACCUMULATION,
                       grad_multiplier=ACCUMULATION),
-        NumTokens(),
-        tcb.Log('loss', 'loss'),
-        tcb.Log('ppl', 'ppl'),
-        tcb.Log('loss_at_pos', 'loss_at_pos'),
-        tcb.Log('pos_weight', 'pos_weight'),
-        tcb.Log('num_tokens', 'num_tokens'),
-        tcb.TopkAccAvg(k=15, post_each_batch=True),
-        BestAndWorst(bpe),
-    ])
-    recipe.test_loop.callbacks.add_callbacks([
-        tcb.Log('outs', 'outs'),
-        tcb.Log('loss', 'loss'),
-        tcb.Log('ppl', 'ppl'),
-        tcb.Log('topk15_acc', 'topk15_acc'),
-    ])
+    ]
+    if torch.cuda.is_available():
+        callbacks.extend([
+            NumTokens(),
+            tcb.Log('loss', 'loss'),
+            tcb.Log('ppl', 'ppl'),
+            tcb.Log('loss_at_pos', 'loss_at_pos'),
+            tcb.Log('pos_weight', 'pos_weight'),
+            tcb.Log('num_tokens', 'num_tokens'),
+            tcb.TopkAccAvg(k=15, post_each_batch=True),
+            BestAndWorst(bpe),
+        ])
+        callbacks.insert(
+            0,
+            tcb.LRSched(
+                tch.lr_scheduler.CosineDecay(
+                    optimizer,
+                    num_iters,
+                    warmup_ratio=0.05 if pretrained is None else 0.0,
+                ),
+                metric=None,
+                step_each_batch=True,
+            ),
+        )
+    recipe.callbacks.add_callbacks(callbacks)
+    if torch.cuda.is_available():
+        recipe.test_loop.callbacks.add_callbacks([
+            tcb.Log('outs', 'outs'),
+            tcb.Log('loss', 'loss'),
+            tcb.Log('ppl', 'ppl'),
+            tcb.Log('topk15_acc', 'topk15_acc'),
+        ])
     recipe.register('loss_fn', loss_fn)
     recipe.register('model_type', model_size)
     #recipe.register('bpe', bpe)
-    recipe.to(rank)
-    recipe.run(100)
+    recipe.to(device)
+    recipe.run(max_steps)
 
 
 if __name__ == '__main__':
@@ -319,19 +353,37 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--global-batch-size', type=int, default=500_000)
     parser.add_argument('--data', default='data/')
+    parser.add_argument('--experiment', default='base')
+    parser.add_argument('--max-steps', type=int, default=100)
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
         raise ValueError('Either --bpe or --pretrained must be specified')
 
-    tch.utils.parallel_run(
-        train,
-        datapath=args.data,
-        lr=args.lr,
-        chinchilla_factor=args.chinchilla_factor,
-        model_size=args.model,
-        pretrained=args.pretrained,
-        bpe_path=args.bpe,
-        batch_size=args.batch_size,
-        global_batch_size=args.global_batch_size,
-    )
+    if torch.cuda.is_available():
+        tch.utils.parallel_run(
+            train,
+            datapath=args.data,
+            lr=args.lr,
+            chinchilla_factor=args.chinchilla_factor,
+            model_size=args.model,
+            pretrained=args.pretrained,
+            bpe_path=args.bpe,
+            batch_size=args.batch_size,
+            global_batch_size=args.global_batch_size,
+            experiment=args.experiment,
+            max_steps=args.max_steps,
+        )
+    else:
+        train(datapath=args.data,
+              lr=args.lr,
+              chinchilla_factor=args.chinchilla_factor,
+              model_size=args.model,
+              pretrained=args.pretrained,
+              bpe_path=args.bpe,
+              batch_size=args.batch_size,
+              global_batch_size=args.global_batch_size,
+              rank=0,
+              world_size=1,
+              experiment=args.experiment,
+              max_steps=args.max_steps)
