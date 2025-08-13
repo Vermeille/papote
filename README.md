@@ -1,5 +1,7 @@
 # Papote
 
+[![CI](https://github.com/.../papote/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/.../papote/actions/workflows/ci.yml)
+
 Papote is a full reimplementation from scratch of generative language models.
 It is mainly done as way to learn in depth the intricacies of writing and
 training language models. The end goal is to train it on some conversation
