@@ -154,6 +154,13 @@ class RotarySingle(torch.nn.Module):
         return (q * cos) + (self.rotate_half(q) * sin)
 
 
+class NoRotary(nn.Module):
+    """Placeholder module when rotary embeddings are disabled."""
+
+    def forward(self, q, k, v):
+        return q, k, v
+
+
 class ScaledSinosoidal(SinusoidalPositional):
     """Sinusoidal with scaling (see FLASH paper)."""
 
@@ -177,7 +184,7 @@ class ScaledSinosoidal(SinusoidalPositional):
 
 class SelfAttention(nn.Module):
 
-    def __init__(self, hidden_size, num_heads, head_size):
+    def __init__(self, hidden_size, num_heads, head_size, rotary=True):
         super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
@@ -186,7 +193,7 @@ class SelfAttention(nn.Module):
             math.sqrt(2 / (5 * hidden_size)))
         self.fc = tu.constant_init(
             nn.Linear(head_size * num_heads, hidden_size, bias=False), 0.0)
-        self.rotary = Rotary(head_size)
+        self.rotary = Rotary(head_size) if rotary else NoRotary()
 
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
@@ -262,10 +269,10 @@ class SwiGLU(nn.Module):
 
 class TransformerBlock(nn.Module):
 
-    def __init__(self, hidden_size, num_heads, head_size):
+    def __init__(self, hidden_size, num_heads, head_size, rotary=True):
         super().__init__()
         self.layer_norm1 = nn.RMSNorm(hidden_size, elementwise_affine=False)
-        self.sa = SelfAttention(hidden_size, num_heads, head_size)
+        self.sa = SelfAttention(hidden_size, num_heads, head_size, rotary=rotary)
         self.layer_norm2 = nn.RMSNorm(hidden_size, elementwise_affine=False)
         self.feed_forward = nn.Sequential(
             tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False)),
@@ -371,17 +378,27 @@ class PatchEmbedding(TokenDict):
 
 class Transformer(nn.Module):
 
-    def __init__(self, num_tokens, hidden_size, num_layers, num_heads,
-                 head_size, context_size):
+    def __init__(self,
+                 num_tokens,
+                 hidden_size,
+                 num_layers,
+                 num_heads,
+                 head_size,
+                 context_size,
+                 rotary: bool = True,
+                 rotary_single: bool = True):
         super().__init__()
         self.register_buffer('context_size', torch.tensor(context_size))
         self.token_embedding = TokenDict(num_tokens, hidden_size)
         self.layer_norm_in = nn.RMSNorm(hidden_size, elementwise_affine=False)
-        self.rotary = RotarySingle(hidden_size)
+        self.rotary = (RotarySingle(hidden_size)
+                        if rotary_single else nn.Identity())
 
         self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(hidden_size, num_heads, head_size)
-            for _ in range(num_layers)
+            TransformerBlock(hidden_size,
+                             num_heads,
+                             head_size,
+                             rotary=rotary) for _ in range(num_layers)
         ])
 
         #self.check_params()
