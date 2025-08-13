@@ -50,3 +50,34 @@ def test_rotary_flags_checkpoint_roundtrip():
     loaded = transformer_from_checkpoint(ckpt)
     assert isinstance(loaded.transformer_blocks[0].sa.rotary, NoRotary)
     assert isinstance(loaded.rotary, nn.Identity)
+
+def _run_forward(rotary: bool, rotary_single: bool):
+    model = Transformer(
+        num_tokens=10,
+        hidden_size=8,
+        num_layers=1,
+        num_heads=2,
+        head_size=4,
+        context_size=8,
+        rotary=rotary,
+        rotary_single=rotary_single,
+    )
+    x = torch.randint(0, 10, (1, 8))
+    out = model(x)
+    assert out.shape == (1, 8, 10)
+
+
+def test_forward_rotary_both():
+    _run_forward(True, True)
+
+
+def test_forward_rotary_only_layers():
+    _run_forward(True, False)
+
+
+def test_forward_rotary_single_only():
+    _run_forward(False, True)
+
+
+def test_forward_no_rotary():
+    _run_forward(False, False)
