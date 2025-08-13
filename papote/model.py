@@ -122,14 +122,24 @@ class RotarySingle(torch.nn.Module):
     def forward(self, q, seq_dim=-2):
         seq_len = q.shape[seq_dim]
         if seq_len > self.seq_len_cached:
-            self.seq_len_cached = seq_len
-            t = torch.arange(q.shape[seq_dim],
-                             device=q.device).type_as(self.inv_freq)
+            t = torch.arange(seq_len, device=q.device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq)
             emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
             self.cos_cached = emb.cos()
             self.sin_cached = emb.sin()
+            self.seq_len_cached = seq_len
         cos, sin = self.cos_cached[:seq_len], self.sin_cached[:seq_len]
+
+        # reshape cos/sin for broadcasting on the sequence dimension
+        ndim = q.ndim
+        seq_dim = seq_dim % ndim
+        if seq_dim != ndim - 2:
+            shape = [1] * ndim
+            shape[seq_dim] = seq_len
+            shape[-1] = cos.shape[-1]
+            cos = cos.reshape(shape)
+            sin = sin.reshape(shape)
+
         return self.apply_rotary_pos_emb(q, cos, sin)
 
     # rotary pos emb helpers:
