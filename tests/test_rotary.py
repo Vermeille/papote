@@ -58,7 +58,8 @@ def test_forward_updates_cache_and_matches_manual():
     k = torch.randn(2, 3, 10, 8)
     v = torch.randn(2, 3, 10, 8)
     q_rot, k_rot, v_out = rot(q, k, v)
-    assert rot.seq_len_cached == 10
+    key = (rot.dim, rot.base, q.device)
+    assert Rotary._cache[key][2] == 10
     q_manual, k_manual = _manual_rotary(rot, q, k)
     assert torch.allclose(q_rot, q_manual)
     assert torch.allclose(k_rot, k_manual)
@@ -67,19 +68,21 @@ def test_forward_updates_cache_and_matches_manual():
 
 def test_forward_reuses_cache_for_shorter_sequence():
     torch.manual_seed(2)
-    rot = Rotary(6)
+    rot1 = Rotary(6)
+    rot2 = Rotary(6)
     q1 = torch.randn(1, 1, 8, 6)
     k1 = torch.randn(1, 1, 8, 6)
     v1 = torch.randn(1, 1, 8, 6)
-    rot(q1, k1, v1)
-    cached_ptr = rot.cos_cached.data_ptr()
+    rot1(q1, k1, v1)
+    key = (rot1.dim, rot1.base, q1.device)
+    cached_ptr = Rotary._cache[key][0].data_ptr()
     q2 = torch.randn(1, 1, 4, 6)
     k2 = torch.randn(1, 1, 4, 6)
     v2 = torch.randn(1, 1, 4, 6)
-    q_rot, k_rot, v_out = rot(q2, k2, v2)
-    assert rot.cos_cached.data_ptr() == cached_ptr
-    assert rot.seq_len_cached == 8
-    q_manual, k_manual = _manual_rotary(rot, q2, k2)
+    q_rot, k_rot, v_out = rot2(q2, k2, v2)
+    assert Rotary._cache[key][0].data_ptr() == cached_ptr
+    assert Rotary._cache[key][2] == 8
+    q_manual, k_manual = _manual_rotary(rot1, q2, k2)
     assert torch.allclose(q_rot, q_manual)
     assert torch.allclose(k_rot, k_manual)
     assert torch.allclose(v_out, v2)

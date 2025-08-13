@@ -64,25 +64,32 @@ class SinusoidalPositional(torch.nn.Module):
 
 
 class Rotary(torch.nn.Module):
+    _cache = {}
 
     def __init__(self, dim, base=10000):
         super().__init__()
+        self.dim = dim
+        self.base = base
         inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
-        self.seq_len_cached = 0
-        self.register_buffer("cos_cached", torch.tensor([[1.]]))
-        self.register_buffer("sin_cached", torch.tensor([[1.]]))
+
+    def _cache_key(self, device):
+        return (self.dim, self.base, device)
 
     def forward(self, q, k, v, seq_dim=-2):
         seq_len = q.shape[seq_dim]
-        if seq_len > self.seq_len_cached:
-            t = torch.arange(seq_len, device=q.device).type_as(self.inv_freq)
+        device = q.device
+        key = self._cache_key(device)
+        cos_cached, sin_cached, cached_len = self._cache.get(key, (None, None, 0))
+        if cached_len < seq_len or cos_cached is None:
+            t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
-            self.cos_cached = emb.cos()
-            self.sin_cached = emb.sin()
-            self.seq_len_cached = seq_len
-        cos, sin = self.cos_cached[:seq_len], self.sin_cached[:seq_len]
+            emb = torch.cat((freqs, freqs), dim=-1).to(device)
+            cos_cached = emb.cos()
+            sin_cached = emb.sin()
+            cached_len = seq_len
+            self._cache[key] = (cos_cached, sin_cached, cached_len)
+        cos, sin = cos_cached[:seq_len], sin_cached[:seq_len]
 
         # reshape cos/sin for broadcasting on the sequence dimension
         ndim = q.ndim
@@ -110,25 +117,32 @@ class Rotary(torch.nn.Module):
                             sin), (k * cos) + (self.rotate_half(k) * sin), v
 
 class RotarySingle(torch.nn.Module):
+    _cache = {}
 
     def __init__(self, dim, base=10000):
         super().__init__()
+        self.dim = dim
+        self.base = base
         inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
-        self.seq_len_cached = 0
-        self.register_buffer("cos_cached", torch.tensor([[1.]]))
-        self.register_buffer("sin_cached", torch.tensor([[1.]]))
+
+    def _cache_key(self, device):
+        return (self.dim, self.base, device)
 
     def forward(self, q, seq_dim=-2):
         seq_len = q.shape[seq_dim]
-        if seq_len > self.seq_len_cached:
-            t = torch.arange(seq_len, device=q.device).type_as(self.inv_freq)
+        device = q.device
+        key = self._cache_key(device)
+        cos_cached, sin_cached, cached_len = self._cache.get(key, (None, None, 0))
+        if cached_len < seq_len or cos_cached is None:
+            t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
-            self.cos_cached = emb.cos()
-            self.sin_cached = emb.sin()
-            self.seq_len_cached = seq_len
-        cos, sin = self.cos_cached[:seq_len], self.sin_cached[:seq_len]
+            emb = torch.cat((freqs, freqs), dim=-1).to(device)
+            cos_cached = emb.cos()
+            sin_cached = emb.sin()
+            cached_len = seq_len
+            self._cache[key] = (cos_cached, sin_cached, cached_len)
+        cos, sin = cos_cached[:seq_len], sin_cached[:seq_len]
 
         # reshape cos/sin for broadcasting on the sequence dimension
         ndim = q.ndim
