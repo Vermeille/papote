@@ -479,15 +479,15 @@ class Transformer(nn.Module):
 
 
 def transformer_from_checkpoint(checkpoint):
-    specs = list_models()[checkpoint['model_type']]
-    print('Loading model', checkpoint['model'].keys())
-    return make_transformer(
-        checkpoint['model_type'],
-        checkpoint['model']
-        ['_orig_mod.token_embedding.token_embedding.weight'].shape[0],
-        512  #checkpoint['model']['positional_embedding'].shape[1],
+    """Rebuild a :class:`Transformer` from a training checkpoint."""
+    state = checkpoint["model"]
+    token_emb_key = next(
+        k for k in state.keys()
+        if k.endswith("token_embedding.token_embedding.weight")
     )
-
+    vocab_size = state[token_emb_key].shape[0]
+    context_len = int(state.get("context_size", torch.tensor(512)))
+    return make_transformer(checkpoint["model_type"], vocab_size, context_len)
 
 def list_models():
     from model_specs.tiny import list_models as tiny
