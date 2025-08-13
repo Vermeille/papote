@@ -1,5 +1,5 @@
 # Papote
-[![Tests](../../actions/workflows/tests.yml/badge.svg)](../../actions/workflows/tests.yml)
+[![Tests](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
 Papote is a full reimplementation from scratch of generative language models.
 It is mainly done as way to learn in depth the intricacies of writing and
