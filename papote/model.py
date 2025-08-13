@@ -8,7 +8,6 @@ from torchelie.nn import MultiVQ2, ChannelNorm
 
 
 class SquaredReLU(nn.Module):
-
     def __init__(self, inplace=False):
         super().__init__()
         self.inplace = inplace
@@ -18,7 +17,6 @@ class SquaredReLU(nn.Module):
 
 
 class ZeroScale(nn.Module):
-
     def __init__(self):
         super().__init__()
         self.scale = nn.Parameter(torch.zeros(1) + 1e-5)
@@ -38,12 +36,13 @@ class SinusoidalPositional(torch.nn.Module):
         super().__init__()
 
         import math
+
         pe = torch.zeros(max_seq_length, embedding_dim)
-        position = torch.arange(0, max_seq_length,
-                                dtype=torch.float).unsqueeze(1)
+        position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, embedding_dim, 2).float() *
-            (-math.log(10000.0) / embedding_dim))
+            torch.arange(0, embedding_dim, 2).float()
+            * (-math.log(10000.0) / embedding_dim)
+        )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
 
@@ -60,7 +59,7 @@ class SinusoidalPositional(torch.nn.Module):
         Examples:
             >>> output = pos_encoder(x)
         """
-        return self.pe[:, :input_ids.shape[1], :]
+        return self.pe[:, : input_ids.shape[1], :]
 
 
 class Rotary(torch.nn.Module):
@@ -70,7 +69,7 @@ class Rotary(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.base = base
-        inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
 
     def _cache_key(self, device):
@@ -103,9 +102,11 @@ class Rotary(torch.nn.Module):
                 sin = sin.reshape(shape)
         else:
             cos = cos_cached.index_select(0, positions.reshape(-1)).view(
-                positions.shape + (cos_cached.shape[-1],))
+                positions.shape + (cos_cached.shape[-1],)
+            )
             sin = sin_cached.index_select(0, positions.reshape(-1)).view(
-                positions.shape + (sin_cached.shape[-1],))
+                positions.shape + (sin_cached.shape[-1],)
+            )
             ndim = q.ndim
             seq_dim = seq_dim % ndim
             shape = [1] * ndim
@@ -120,14 +121,25 @@ class Rotary(torch.nn.Module):
     # rotary pos emb helpers:
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
-        x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+        x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
         return torch.cat(
-            (-x2, x1),
-            dim=x1.ndim - 1)  # dim=-1 triggers a bug in torch < 1.8.0
+            (-x2, x1), dim=x1.ndim - 1
+        )  # dim=-1 triggers a bug in torch < 1.8.0
 
-    def apply_rotary_pos_emb(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor)->torch.Tensor:
-        return (q * cos) + (self.rotate_half(q) *
-                            sin), (k * cos) + (self.rotate_half(k) * sin), v
+    def apply_rotary_pos_emb(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+    ) -> torch.Tensor:
+        return (
+            (q * cos) + (self.rotate_half(q) * sin),
+            (k * cos) + (self.rotate_half(k) * sin),
+            v,
+        )
+
 
 class RotarySingle(torch.nn.Module):
     _cache = {}
@@ -136,7 +148,7 @@ class RotarySingle(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.base = base
-        inv_freq = 1.0 / (base**(torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
 
     def _cache_key(self, device):
@@ -168,9 +180,11 @@ class RotarySingle(torch.nn.Module):
                 sin = sin.reshape(shape)
         else:
             cos = cos_cached.index_select(0, positions.reshape(-1)).view(
-                positions.shape + (cos_cached.shape[-1],))
+                positions.shape + (cos_cached.shape[-1],)
+            )
             sin = sin_cached.index_select(0, positions.reshape(-1)).view(
-                positions.shape + (sin_cached.shape[-1],))
+                positions.shape + (sin_cached.shape[-1],)
+            )
             ndim = q.ndim
             seq_dim = seq_dim % ndim
             shape = [1] * ndim
@@ -185,12 +199,14 @@ class RotarySingle(torch.nn.Module):
     # rotary pos emb helpers:
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
-        x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+        x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
         return torch.cat(
-            (-x2, x1),
-            dim=x1.ndim - 1)  # dim=-1 triggers a bug in torch < 1.8.0
+            (-x2, x1), dim=x1.ndim - 1
+        )  # dim=-1 triggers a bug in torch < 1.8.0
 
-    def apply_rotary_pos_emb(self, q: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor)->torch.Tensor:
+    def apply_rotary_pos_emb(
+        self, q: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+    ) -> torch.Tensor:
         return (q * cos) + (self.rotate_half(q) * sin)
 
 
@@ -206,8 +222,7 @@ class ScaledSinosoidal(SinusoidalPositional):
 
     def __init__(self, embedding_dim, max_seq_length):
         super().__init__(embedding_dim, max_seq_length)
-        self.scale_factor = torch.nn.Parameter(
-            torch.tensor([1.0 / embedding_dim**0.5]))
+        self.scale_factor = torch.nn.Parameter(torch.tensor([1.0 / embedding_dim**0.5]))
 
     def forward(self, input_ids):
         r"""Inputs of forward function
@@ -219,20 +234,21 @@ class ScaledSinosoidal(SinusoidalPositional):
         Examples:
             >>> output = pos_encoder(x)
         """
-        return self.scale_factor * self.pe[:, :input_ids.shape[1], :]
+        return self.scale_factor * self.pe[:, : input_ids.shape[1], :]
 
 
 class SelfAttention(nn.Module):
-
     def __init__(self, hidden_size, num_heads, head_size, rotary=True):
         super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
         self.qkv = tu.normal_init(
             nn.Linear(hidden_size, head_size * num_heads * 3, bias=False),
-            math.sqrt(2 / (5 * hidden_size)))
+            math.sqrt(2 / (5 * hidden_size)),
+        )
         self.fc = tu.constant_init(
-            nn.Linear(head_size * num_heads, hidden_size, bias=False), 0.0)
+            nn.Linear(head_size * num_heads, hidden_size, bias=False), 0.0
+        )
         self.rotary = Rotary(head_size) if rotary else NoRotary()
 
     def forward(self, x, kv_cache=None):
@@ -242,53 +258,60 @@ class SelfAttention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
         if kv_cache is not None:
             # update k, v
-            k, v = (torch.cat([kv_cache[0], k],
-                              dim=2), torch.cat([kv_cache[1], v], dim=2))
+            k, v = (
+                torch.cat([kv_cache[0], k], dim=2),
+                torch.cat([kv_cache[1], v], dim=2),
+            )
             # update cache
             kv_cache[:] = [k, v]
         q, k, v = self.rotary(q, k, v)
         att = nn.functional.scaled_dot_product_attention(
-            q, k, v, is_causal=kv_cache is None)
+            q, k, v, is_causal=kv_cache is None
+        )
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.fc(att)
 
 
 class MultiQuerySelfAttention(nn.Module):
-
     def __init__(self, hidden_size, num_heads, head_size):
         super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
         self.qkv = tu.xavier(
-            nn.Linear(hidden_size,
-                      head_size * num_heads + 2 * head_size,
-                      bias=False))
+            nn.Linear(hidden_size, head_size * num_heads + 2 * head_size, bias=False)
+        )
         self.norm = nn.LayerNorm(self.qkv.out_features)
         self.fc = tu.constant_init(
-            nn.Linear(head_size * num_heads, hidden_size, bias=False), 0)
+            nn.Linear(head_size * num_heads, hidden_size, bias=False), 0
+        )
 
     def forward(self, x, kv_cache=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
         qkv = self.norm(self.qkv(x)).reshape(b, l, -1, d).permute(2, 0, 1, 3)
-        q, k, v = (qkv[2:].transpose(0, 1), qkv[0:1].transpose(0, 1),
-                   qkv[1:2].transpose(0, 1))
+        q, k, v = (
+            qkv[2:].transpose(0, 1),
+            qkv[0:1].transpose(0, 1),
+            qkv[1:2].transpose(0, 1),
+        )
         if kv_cache is not None:
             # update k, v
-            k, v = (torch.cat([kv_cache[0], k],
-                              dim=2), torch.cat([kv_cache[1], v], dim=2))
+            k, v = (
+                torch.cat([kv_cache[0], k], dim=2),
+                torch.cat([kv_cache[1], v], dim=2),
+            )
             # update cache
             kv_cache[:] = [k, v]
         att = nn.functional.scaled_dot_product_attention(
-            q, k, v, is_causal=kv_cache is None)
+            q, k, v, is_causal=kv_cache is None
+        )
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.fc(att)
 
 
 class GEGLU(nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -298,7 +321,6 @@ class GEGLU(nn.Module):
 
 
 class SwiGLU(nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -308,7 +330,6 @@ class SwiGLU(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-
     def __init__(self, hidden_size, num_heads, head_size, rotary=True):
         super().__init__()
         self.layer_norm1 = nn.RMSNorm(hidden_size, elementwise_affine=False)
@@ -317,7 +338,8 @@ class TransformerBlock(nn.Module):
         self.feed_forward = nn.Sequential(
             tu.kaiming(nn.Linear(hidden_size, 4 * hidden_size, bias=False)),
             GEGLU(),
-            tu.xavier(nn.Linear(2 * hidden_size, hidden_size, bias=False)))
+            tu.xavier(nn.Linear(2 * hidden_size, hidden_size, bias=False)),
+        )
 
     def forward(self, x, kv_cache=None):
         x = self.sa(self.layer_norm1(x), kv_cache) + x
@@ -326,7 +348,6 @@ class TransformerBlock(nn.Module):
 
 
 class TokenDict(nn.Module):
-
     def __init__(self, num_tokens, hidden_size, tied_embedding=False):
         super().__init__()
         self.num_tokens = num_tokens
@@ -340,8 +361,7 @@ class TokenDict(nn.Module):
         if tied_embedding:
             self.unembed.weight = self.token_embedding.weight
         else:
-            nn.init.normal_(self.unembed.weight, 0,
-                            2 / math.sqrt(hidden_size) / 10)
+            nn.init.normal_(self.unembed.weight, 0, 2 / math.sqrt(hidden_size) / 10)
 
     def forward(self, input_ids, latents, embed=True):
         if embed:
@@ -351,7 +371,6 @@ class TokenDict(nn.Module):
 
 
 class Pad(nn.Module):
-
     def __init__(self, pad, value=0):
         super().__init__()
         self.pad = pad
@@ -362,88 +381,81 @@ class Pad(nn.Module):
 
 
 class PatchEmbedding(TokenDict):
-
     def __init__(self, hidden_size, patch_size):
         letter_emb = hidden_size
         super().__init__(256, letter_emb)
         self.patch_size = patch_size
-        self.proj = nn.Conv1d(letter_emb,
-                              hidden_size,
-                              patch_size,
-                              stride=patch_size,
-                              bias=False)
+        self.proj = nn.Conv1d(
+            letter_emb, hidden_size, patch_size, stride=patch_size, bias=False
+        )
 
         self.unproj = nn.Sequential(
             ChannelNorm(),
             Pad((patch_size - 1, 0)),
-            tu.kaiming(
-                nn.Conv1d(hidden_size, hidden_size * 4, patch_size,
-                          bias=False)),
+            tu.kaiming(nn.Conv1d(hidden_size, hidden_size * 4, patch_size, bias=False)),
             nn.GELU(),
             Pad((patch_size - 1, 0)),
-            tu.kaiming(
-                nn.Conv1d(hidden_size * 4, letter_emb, patch_size,
-                          bias=False)),
+            tu.kaiming(nn.Conv1d(hidden_size * 4, letter_emb, patch_size, bias=False)),
         )
 
     def forward(self, input_ids, latents, embed=True):
         ps = self.patch_size
         if embed:
-            x = TokenDict.forward(self,
-                                  F.pad(
-                                      input_ids[:, :input_ids.shape[1] -
-                                                (input_ids.shape[1] % 4)],
-                                      (ps, 0)),
-                                  latents=None,
-                                  embed=True)
+            x = TokenDict.forward(
+                self,
+                F.pad(
+                    input_ids[:, : input_ids.shape[1] - (input_ids.shape[1] % 4)],
+                    (ps, 0),
+                ),
+                latents=None,
+                embed=True,
+            )
             x = x.permute(0, 2, 1)
             x = self.proj(x)
             x = x.permute(0, 2, 1)
             return x
         else:
             x = latents.permute(0, 2, 1)
-            x = F.interpolate(x, scale_factor=self.patch_size, mode='linear')
-            x = x[:, :, :input_ids.shape[1]]
-            #x = torch.cat([ x, TokenDict.forward(self, input_ids, embed=True).permute( 0, 2, 1) ], dim=1)
+            x = F.interpolate(x, scale_factor=self.patch_size, mode="linear")
+            x = x[:, :, : input_ids.shape[1]]
+            # x = torch.cat([ x, TokenDict.forward(self, input_ids, embed=True).permute( 0, 2, 1) ], dim=1)
             x = x + TokenDict.forward(
-                self, input_ids, latents=None, embed=True).permute(0, 2, 1)
-            #x = x + self.unembed.weight[input_ids].permute(0, 2, 1)
+                self, input_ids, latents=None, embed=True
+            ).permute(0, 2, 1)
+            # x = x + self.unembed.weight[input_ids].permute(0, 2, 1)
             x = self.unproj(x) + x
             x = x.permute(0, 2, 1)
-            return TokenDict.forward(self,
-                                     latents=x,
-                                     input_ids=None,
-                                     embed=False)
+            return TokenDict.forward(self, latents=x, input_ids=None, embed=False)
 
 
 class Transformer(nn.Module):
-
-    def __init__(self,
-                 num_tokens,
-                 hidden_size,
-                 num_layers,
-                 num_heads,
-                head_size,
-                context_size,
-                rotary: bool = True,
-                rotary_single: bool = True):
+    def __init__(
+        self,
+        num_tokens,
+        hidden_size,
+        num_layers,
+        num_heads,
+        head_size,
+        context_size,
+        rotary: bool = True,
+        rotary_single: bool = True,
+    ):
         super().__init__()
-        self.register_buffer('context_size', torch.tensor(context_size))
-        self.register_buffer('rotary_flag', torch.tensor(rotary))
-        self.register_buffer('rotary_single_flag', torch.tensor(rotary_single))
+        self.register_buffer("context_size", torch.tensor(context_size))
+        self.register_buffer("rotary_flag", torch.tensor(rotary))
+        self.register_buffer("rotary_single_flag", torch.tensor(rotary_single))
         self.token_embedding = TokenDict(num_tokens, hidden_size)
         self.layer_norm_in = nn.RMSNorm(hidden_size, elementwise_affine=False)
-        self.rotary = (RotarySingle(hidden_size)
-                        if rotary_single else nn.Identity())
+        self.rotary = RotarySingle(hidden_size) if rotary_single else nn.Identity()
 
-        self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(hidden_size,
-                             num_heads,
-                             head_size,
-                             rotary=rotary) for _ in range(num_layers)
-        ])
+        self.transformer_blocks = nn.ModuleList(
+            [
+                TransformerBlock(hidden_size, num_heads, head_size, rotary=rotary)
+                for _ in range(num_layers)
+            ]
+        )
 
-        #self.check_params()
+        # self.check_params()
         for m in self.modules():
             if isinstance(m, nn.LayerNorm):
                 m.bias.data.zero_()
@@ -452,6 +464,7 @@ class Transformer(nn.Module):
 
     def check_params(self):
         from collections import Counter
+
         allp = set(self.parameters())
         namedp = {p: n for n, p in self.named_parameters()}
         decays = set(self.decayable_parameters())
@@ -463,36 +476,38 @@ class Transformer(nn.Module):
             for p, cnt in Counter(self.decayable_parameters()).items()
             if cnt > 1
         ]
-        assert len(
-            dup_decay) == 0, f'Duplicated decayable parameters: {dup_decay}'
+        assert len(dup_decay) == 0, f"Duplicated decayable parameters: {dup_decay}"
         dup_undecay = [
             namedp[p]
             for p, cnt in Counter(self.undecayable_parameters()).items()
             if cnt > 1
         ]
-        assert len(dup_undecay
-                   ) == 0, f'Duplicated undecayable parameters: {dup_undecay}'
+        assert (
+            len(dup_undecay) == 0
+        ), f"Duplicated undecayable parameters: {dup_undecay}"
 
-    def forward(self,
-                input_ids,
-                kv_cache=None,
-                output_ids=None,
-                loss_fn=F.cross_entropy):
+    def forward(
+        self, input_ids, kv_cache=None, output_ids=None, loss_fn=F.cross_entropy
+    ):
         # - all kinds of l2 norm were worse than none
         # - all different ways to plug in positional embedding were worse
-        if (kv_cache is not None
-                and len(kv_cache) != len(self.transformer_blocks)):
+        if kv_cache is not None and len(kv_cache) != len(self.transformer_blocks):
             kv_cache.clear()
-            kv_cache.extend([[
-                torch.empty(0).to(input_ids.device),
-                torch.empty(0).to(input_ids.device)
-            ] for _ in range(len(self.transformer_blocks))])
+            kv_cache.extend(
+                [
+                    [
+                        torch.empty(0).to(input_ids.device),
+                        torch.empty(0).to(input_ids.device),
+                    ]
+                    for _ in range(len(self.transformer_blocks))
+                ]
+            )
             offset = 0
         else:
             offset = kv_cache[0][0].shape[2] if kv_cache is not None else 0
-        #print(offset, len(kv_cache), kv_cache[0][0].shape if kv_cache else None, kv_cache[0][1].shape if kv_cache else None)
+        # print(offset, len(kv_cache), kv_cache[0][0].shape if kv_cache else None, kv_cache[0][1].shape if kv_cache else None)
         outputs = self.token_embedding(input_ids, latents=None, embed=True)
-        #pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
+        # pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
         outputs = self.layer_norm_in(outputs)  # + self.pos_norm(pos)
         outputs = self.rotary(outputs)
 
@@ -501,37 +516,35 @@ class Transformer(nn.Module):
 
         for i, transformer_block in enumerate(self.transformer_blocks):
             f = do  # if i % 2 == 0 else torch.utils.checkpoint.checkpoint
-            outputs = f(transformer_block, outputs,
-                        kv_cache[i] if kv_cache else None)
+            outputs = f(transformer_block, outputs, kv_cache[i] if kv_cache else None)
 
         logits = self.token_embedding(input_ids, outputs, embed=False)
         if output_ids is not None:
-            return loss_fn(logits.transpose(2, 1),
-                           output_ids,
-                           reduction='none')
+            return loss_fn(logits.transpose(2, 1), output_ids, reduction="none")
         return logits
 
     def decayable_parameters(self):
         for mod in self.children():
-            if (mod is self.token_embedding
-                    or mod is self.token_embedding.unembed):
+            if mod is self.token_embedding or mod is self.token_embedding.unembed:
                 continue
             for p in mod.parameters():
                 yield p
 
     def undecayable_parameters(self):
-        #yield self.positional_embedding
+        # yield self.positional_embedding
         yield self.token_embedding.weight
 
     def mu_parametrization(self):
         from collections import defaultdict
+
         params = defaultdict(list)
         for name, p in self.named_parameters():
-            #if 'unembed' in name: continue
-            decayable = not (len(p.size()) == 1 or 'embedding' in name)
+            # if 'unembed' in name: continue
+            decayable = not (len(p.size()) == 1 or "embedding" in name)
             if len(p.size()) >= 2:
-                size_in = (1 if 'embedding' in name else 2
-                           )  #p.view(p.size(0), -1).size(1))
+                size_in = (
+                    1 if "embedding" in name else 2
+                )  # p.view(p.size(0), -1).size(1))
             else:
                 size_in = 1
             params[(decayable, size_in)].append(p)
@@ -542,18 +555,19 @@ class Transformer(nn.Module):
 
     def num_parameters_without_embeddings(self):
         return (
-            sum(p.numel() for p in self.parameters()) -
-            #self.token_embedding.weight.numel() -
-            #self.positional_embedding.numel() -
-            self.token_embedding.unembed.weight.numel())
+            sum(p.numel() for p in self.parameters())
+            -
+            # self.token_embedding.weight.numel() -
+            # self.positional_embedding.numel() -
+            self.token_embedding.unembed.weight.numel()
+        )
 
 
 def transformer_from_checkpoint(checkpoint):
     """Rebuild a :class:`Transformer` from a training checkpoint."""
     state = checkpoint["model"]
     token_emb_key = next(
-        k for k in state.keys()
-        if k.endswith("token_embedding.token_embedding.weight")
+        k for k in state.keys() if k.endswith("token_embedding.token_embedding.weight")
     )
     vocab_size = state[token_emb_key].shape[0]
     context_len = int(state.get("context_size", torch.tensor(512)))
@@ -567,10 +581,12 @@ def transformer_from_checkpoint(checkpoint):
         rotary_single=rotary_single,
     )
 
+
 def list_models():
     from model_specs.tiny import list_models as tiny
     from model_specs.fim import list_models as fim
     from model_specs.chinchilla import list_models as chinchilla
+
     return {
         **tiny(),
         **fim(),
