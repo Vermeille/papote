@@ -45,22 +45,25 @@ def test_forward_updates_cache_and_matches_manual():
     rot = RotarySingle(8)
     q = torch.randn(2, 10, 8)
     q_rot = rot(q)
-    assert rot.seq_len_cached == 10
+    key = (rot.dim, rot.base, q.device)
+    assert RotarySingle._cache[key][2] == 10
     q_manual = _manual_rotary(rot, q)
     assert torch.allclose(q_rot, q_manual)
 
 
 def test_forward_reuses_cache_for_shorter_sequence():
     torch.manual_seed(2)
-    rot = RotarySingle(6)
+    rot1 = RotarySingle(6)
+    rot2 = RotarySingle(6)
     q1 = torch.randn(1, 8, 6)
-    rot(q1)
-    cached_ptr = rot.cos_cached.data_ptr()
+    rot1(q1)
+    key = (rot1.dim, rot1.base, q1.device)
+    cached_ptr = RotarySingle._cache[key][0].data_ptr()
     q2 = torch.randn(1, 4, 6)
-    q_rot = rot(q2)
-    assert rot.cos_cached.data_ptr() == cached_ptr
-    assert rot.seq_len_cached == 8
-    q_manual = _manual_rotary(rot, q2)
+    q_rot = rot2(q2)
+    assert RotarySingle._cache[key][0].data_ptr() == cached_ptr
+    assert RotarySingle._cache[key][2] == 8
+    q_manual = _manual_rotary(rot1, q2)
     assert torch.allclose(q_rot, q_manual)
 
 
