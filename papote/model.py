@@ -127,9 +127,10 @@ class RotarySingle(torch.nn.Module):
                              device=q.device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq)
             emb = torch.cat((freqs, freqs), dim=-1).to(q.device)
-            self.cos_cached = emb.cos()[:, :]
-            self.sin_cached = emb.sin()[:, :]
-        return self.apply_rotary_pos_emb(q, self.cos_cached, self.sin_cached)
+            self.cos_cached = emb.cos()
+            self.sin_cached = emb.sin()
+        cos, sin = self.cos_cached[:seq_len], self.sin_cached[:seq_len]
+        return self.apply_rotary_pos_emb(q, cos, sin)
 
     # rotary pos emb helpers:
 
