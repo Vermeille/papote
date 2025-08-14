@@ -119,13 +119,14 @@ class FillInTheMiddle:
 
 
 class MLMObjective:
-    def __init__(self, mask_token):
+    def __init__(self, mask_token, p):
         self.mask_token = mask_token
+        self.p = p
 
     def __call__(self, x):
         x, y = NextTokenObjective()(x)
         # randomly mask 15% of the input tokens
-        mask = torch.rand_like(x, dtype=torch.float) < 0.15
+        mask = torch.rand_like(x, dtype=torch.float) < self.p
         x[mask] = self.mask_token
         return x, y
 

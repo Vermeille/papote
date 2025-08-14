@@ -119,7 +119,7 @@ class MLMExperiment(Experiment):
         self.mask_token = self.bpe.specials[self.MASK]
 
     def objective(self):
-        return data.MLMObjective(self.mask_token)
+        return data.MLMObjective(self.mask_token, 0.15)
 
 
 @EXPERIMENTS.register("fim")
