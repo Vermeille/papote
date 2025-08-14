@@ -6,6 +6,20 @@ from papote.experiments.think.helpers import think_gain, ThinkObjective
 from papote.experiments.randomcase.utils import RandomCase
 
 
+class ExperimentsByName(dict):
+    """A dictionary-like class to store and retrieve experiments by name.
+    Can register experiments class using it as a decorator."""
+    def register(self, name):
+        """Decorator to register an experiment class."""
+        def decorator(cls):
+            self[name] = cls
+            return cls
+        return decorator
+
+
+EXPERIMENTS = ExperimentsByName()
+
+@EXPERIMENTS.register("base")
 class Experiment:
     """Base experiment for training.
 
@@ -55,6 +69,7 @@ class Experiment:
         return {}
 
 
+@EXPERIMENTS.register("randomcase")
 class RandomCaseExperiment(Experiment):
     UPPER_CASE = "<|UPPER_CASE|>"
     LOWER_CASE = "<|LOWER_CASE|>"
@@ -77,6 +92,7 @@ class RandomCaseExperiment(Experiment):
             ]
         )
 
+@EXPERIMENTS.register("think")
 class ThinkExperiment(Experiment):
     """Experiment inserting a <|THINK|> token during training."""
 
@@ -94,11 +110,13 @@ class ThinkExperiment(Experiment):
         return {"think_gain": tg.item() if isinstance(tg, torch.Tensor) else tg}
 
 
+@EXPERIMENTS.register("mlm")
 class MLMExperiment(Experiment):
     def objective(self):
-        return data.MLMObjective()
+        return data.MLMObjective(self.mask_token)
 
 
+@EXPERIMENTS.register("fim")
 class FillInTheMiddleExperiment(Experiment):
     """Experiment using fill-in-the-middle data augmentation."""
 

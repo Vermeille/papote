@@ -13,12 +13,7 @@ from papote.model import make_transformer
 import papote.data_utils as data
 from papote.bpe import BPE
 import papote.metrics as metrics
-from papote.experiments import (
-    Experiment,
-    ThinkExperiment,
-    FillInTheMiddleExperiment,
-    MLMExperiment,
-)
+from papote.experiments import EXPERIMENTS
 
 
 class BestAndWorst:
@@ -161,12 +156,7 @@ def train(
         bpe = BPE()
         bpe.load_state_dict(checkpoint["bpe"])
 
-    exp_cls = {
-        "base": Experiment,
-        "think": ThinkExperiment,
-        "fim": FillInTheMiddleExperiment,
-        "mlm": MLMExperiment,
-    }.get(experiment, Experiment)
+    exp_cls = EXPERIMENTS[experiment]
     exp = exp_cls(bpe, CTX)
     bpe = exp.bpe
 
@@ -329,7 +319,7 @@ def train(
         log_every=10,
         test_every=500,
         checkpoint=f"model_{model_size}" if rank == 0 else None,
-        visdom_env=f'mylm_{model_size}-lr={lr}'
+        visdom_env=f'mylm-{experiment}_{model_size}-lr={lr}'
         f'{"-finetune" if pretrained is not None else ""}'
         if rank == 0 and torch.cuda.is_available()
         else None,
@@ -397,7 +387,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--global-batch-size", type=int, default=500_000)
     parser.add_argument("--data", default="data/")
-    parser.add_argument("--experiment", default="base")
+    parser.add_argument("--experiment", default="base", choices=EXPERIMENTS.keys())
     parser.add_argument("--max-steps", type=int, default=100)
     args = parser.parse_args()
 
