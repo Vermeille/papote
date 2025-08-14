@@ -9,15 +9,19 @@ from papote.experiments.randomcase.utils import RandomCase
 class ExperimentsByName(dict):
     """A dictionary-like class to store and retrieve experiments by name.
     Can register experiments class using it as a decorator."""
+
     def register(self, name):
         """Decorator to register an experiment class."""
+
         def decorator(cls):
             self[name] = cls
             return cls
+
         return decorator
 
 
 EXPERIMENTS = ExperimentsByName()
+
 
 @EXPERIMENTS.register("base")
 class Experiment:
@@ -91,6 +95,7 @@ class RandomCaseExperiment(Experiment):
                 data.Align(self.ctx + 1, self.bpe.token_to_id("<|NUL|>")),
             ]
         )
+
 
 @EXPERIMENTS.register("think")
 class ThinkExperiment(Experiment):
