@@ -25,11 +25,13 @@ class Experiment:
     # --- data ----------------------------------------------------------
     def transforms(self):
         """Return transforms applied to raw text before chunking."""
-        return Compose([
-            data.NFKC(),
-            data.Tokenize(self.bpe),
-            data.Align(self.ctx + 1, self.bpe.token_to_id('<|NUL|>')),
-        ])
+        return Compose(
+            [
+                data.NFKC(),
+                data.Tokenize(self.bpe),
+                data.Align(self.ctx + 1, self.bpe.token_to_id("<|NUL|>")),
+            ]
+        )
 
     def objective(self):
         """Return objective converting tokenized chunks to model inputs."""
@@ -45,7 +47,7 @@ class Experiment:
 
     def loss_mask(self, x, y):
         """Return the mask to use when computing the loss."""
-        return y.ne(self.bpe.token_to_id('<|NUL|>'))
+        return y.ne(self.bpe.token_to_id("<|NUL|>"))
 
     def metrics(self, x, y, loss):
         """Return additional metrics to log during training."""
@@ -55,7 +57,7 @@ class Experiment:
 class ThinkExperiment(Experiment):
     """Experiment inserting a <|THINK|> token during training."""
 
-    TOKEN = '<|THINK|>'
+    TOKEN = "<|THINK|>"
 
     def configure_tokenizer(self):
         self.bpe.add_special(self.TOKEN)
@@ -66,15 +68,20 @@ class ThinkExperiment(Experiment):
 
     def metrics(self, x, y, loss):
         tg = think_gain(x, y, loss, self.bpe)
-        return {'think_gain': tg.item() if isinstance(tg, torch.Tensor) else tg}
+        return {"think_gain": tg.item() if isinstance(tg, torch.Tensor) else tg}
+
+
+class MLMExperiment(Experiment):
+    def objective(self):
+        return data.MLMObjective()
 
 
 class FillInTheMiddleExperiment(Experiment):
     """Experiment using fill-in-the-middle data augmentation."""
 
-    SUFFIX = '<|SUFFIX|>'
-    PREFIX = '<|PREFIX|>'
-    WRAP = '<|WRAP|>'
+    SUFFIX = "<|SUFFIX|>"
+    PREFIX = "<|PREFIX|>"
+    WRAP = "<|WRAP|>"
 
     def configure_tokenizer(self):
         self.bpe.add_special(self.SUFFIX)
@@ -85,11 +92,13 @@ class FillInTheMiddleExperiment(Experiment):
         self.wrap_token = self.bpe.specials[self.WRAP]
 
     def transforms(self):
-        return Compose([
-            data.NFKC(),
-            data.Tokenize(self.bpe),
-            data.Align(self.ctx + 1, self.bpe.token_to_id('<|NUL|>')),
-            data.FillInTheMiddle(
-                self.suffix_token, self.prefix_token, self.wrap_token, p=0.5
-            ),
-        ])
+        return Compose(
+            [
+                data.NFKC(),
+                data.Tokenize(self.bpe),
+                data.Align(self.ctx + 1, self.bpe.token_to_id("<|NUL|>")),
+                data.FillInTheMiddle(
+                    self.suffix_token, self.prefix_token, self.wrap_token, p=0.5
+                ),
+            ]
+        )

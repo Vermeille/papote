@@ -13,7 +13,12 @@ from papote.model import make_transformer
 import papote.data_utils as data
 from papote.bpe import BPE
 import papote.metrics as metrics
-from papote.experiments import Experiment, ThinkExperiment, FillInTheMiddleExperiment
+from papote.experiments import (
+    Experiment,
+    ThinkExperiment,
+    FillInTheMiddleExperiment,
+    MLMExperiment,
+)
 
 
 class BestAndWorst:
@@ -68,18 +73,6 @@ class NumTokens:
     def on_batch_end(self, state):
         self.num_tokens += state["batch"][0].numel()
         state["metrics"]["num_tokens"] = self.num_tokens
-
-
-class MLMObjective:
-    def __init__(self, mask_token):
-        self.mask_token = mask_token
-
-    def __call__(self, x):
-        x, y = data.NextTokenObjective()(x)
-        # randomly mask 15% of the input tokens
-        mask = torch.rand_like(x, dtype=torch.float) < 0.15
-        x[mask] = self.mask_token
-        return x, y
 
 
 class RandomPad:
@@ -172,6 +165,7 @@ def train(
         "base": Experiment,
         "think": ThinkExperiment,
         "fim": FillInTheMiddleExperiment,
+        "mlm": MLMExperiment,
     }.get(experiment, Experiment)
     exp = exp_cls(bpe, CTX)
     bpe = exp.bpe
