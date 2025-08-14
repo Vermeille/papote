@@ -112,6 +112,12 @@ class ThinkExperiment(Experiment):
 
 @EXPERIMENTS.register("mlm")
 class MLMExperiment(Experiment):
+    MASK = "<|MASK|>"
+
+    def configure_tokenizer(self):
+        self.bpe.add_special(self.MASK)
+        self.mask_token = self.bpe.specials[self.MASK]
+
     def objective(self):
         return data.MLMObjective(self.mask_token)
 
