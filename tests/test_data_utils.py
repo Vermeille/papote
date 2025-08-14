@@ -3,10 +3,7 @@ import random
 import tempfile
 import pytest
 
-torch = pytest.importorskip("torch")
-
 from papote.data_utils import (
-    RandomCase,
     RandomPromptSplit,
     Tokenize,
     Crop,
@@ -19,6 +16,8 @@ from papote.data_utils import (
     SeqWeightedLoss,
     binary_entropy,
 )
+
+from papote.experiments.randomcase.utils import RandomCase
 
 
 class DummyBPE:
