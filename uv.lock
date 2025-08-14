@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -721,7 +721,7 @@ requires-dist = [
     { name = "pytest" },
     { name = "tokenizers" },
     { name = "torch" },
-    { name = "torchelie", git = "https://github.com/Vermeille/Torchelie.git?rev=43028e17ab50fb40c21010a52f523c0fcc532d7d" },
+    { name = "torchelie", git = "https://github.com/Vermeille/Torchelie.git?rev=a3ca96b233cd7433b6afbade3fa6faf50126e96c" },
     { name = "torchvision" },
     { name = "tqdm" },
     { name = "visdom" },
@@ -1238,7 +1238,7 @@ wheels = [
 [[package]]
 name = "torchelie"
 version = "0.1.0"
-source = { git = "https://github.com/Vermeille/Torchelie.git?rev=43028e17ab50fb40c21010a52f523c0fcc532d7d#43028e17ab50fb40c21010a52f523c0fcc532d7d" }
+source = { git = "https://github.com/Vermeille/Torchelie.git?rev=a3ca96b233cd7433b6afbade3fa6faf50126e96c#a3ca96b233cd7433b6afbade3fa6faf50126e96c" }
 dependencies = [
     { name = "torch" },
 ]

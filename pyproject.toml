@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["papote*", "model_specs*"]
 [tool.uv.sources]
-torchelie = { git = "https://github.com/Vermeille/Torchelie.git", rev = "43028e17ab50fb40c21010a52f523c0fcc532d7d" }
+torchelie = { git = "https://github.com/Vermeille/Torchelie.git", rev = "a3ca96b233cd7433b6afbade3fa6faf50126e96c" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

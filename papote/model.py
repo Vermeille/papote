@@ -438,7 +438,7 @@ class Transformer(nn.Module):
         head_size,
         context_size,
         rotary: bool = True,
-        rotary_single: bool = True,
+        rotary_single: bool = False,
     ):
         super().__init__()
         self.register_buffer("context_size", torch.tensor(context_size))
