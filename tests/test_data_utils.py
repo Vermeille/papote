@@ -10,6 +10,7 @@ from papote.data_utils import (
     RandomPromptSplit,
     Tokenize,
     Crop,
+    Permute,
     NFKC,
     Pad,
     Align,
@@ -57,6 +58,23 @@ def test_nfkc_pad_align():
     assert pad([1, 2]) == [1, 2, 0, 0, 0]
     align = Align(4, 0)
     assert align([1, 2, 3, 4, 5]) == [1, 2, 3, 4, 5, 0, 0, 0]
+
+
+def test_permute():
+    p = Permute(3, 4)
+    assert len(p.permutations) == 3
+    assert torch.equal(p.permutations[0], torch.arange(4))
+    for perm in p.permutations:
+        assert torch.equal(torch.sort(perm).values, torch.arange(4))
+
+    random.seed(0)
+    expected_idx = random.randrange(3)
+    random.seed(0)
+    seq = torch.arange(4)
+    idx, perm, permuted = p(seq)
+    assert idx == expected_idx
+    assert torch.equal(perm, p.permutations[idx])
+    assert torch.equal(permuted, seq[perm])
 
 
 def test_tagger():

@@ -108,6 +108,22 @@ class Crop:
         return text
 
 
+class Permute:
+
+    def __init__(self, n, k):
+        self.permutations = [torch.arange(k)]
+        for _ in range(n - 1):
+            self.permutations.append(torch.randperm(k))
+
+    def __call__(self, x):
+        idx = random.randrange(len(self.permutations))
+        perm = self.permutations[idx]
+        if isinstance(x, torch.Tensor):
+            return idx, perm, x[perm]
+        else:
+            return idx, perm, [x[i] for i in perm.tolist()]
+
+
 class FillInTheMiddle:
 
     def __init__(self, suffix, prefix, wrap, p=0.5):
