@@ -3,6 +3,7 @@ import torch
 from torchvision.transforms import Compose
 import papote.data_utils as data
 from papote.experiments.think.helpers import think_gain, ThinkObjective
+from papote.experiments.randomcase.utils import RandomCase
 
 
 class Experiment:
@@ -53,6 +54,28 @@ class Experiment:
         """Return additional metrics to log during training."""
         return {}
 
+
+class RandomCaseExperiment(Experiment):
+    UPPER_CASE = "<|UPPER_CASE|>"
+    LOWER_CASE = "<|LOWER_CASE|>"
+
+    def configure_tokenizer(self):
+        self.bpe.add_special(self.UPPER_CASE)
+        self.bpe.add_special(self.LOWER_CASE)
+        self.upper_token = self.bpe.specials[self.UPPER_CASE]
+        self.lower_token = self.bpe.specials[self.LOWER_CASE]
+
+    # --- data ----------------------------------------------------------
+    def transforms(self):
+        """Return transforms applied to raw text before chunking."""
+        return Compose(
+            [
+                data.NFKC(),
+                RandomCase(self.lower_token, self.upper_token),
+                data.Tokenize(self.bpe),
+                data.Align(self.ctx + 1, self.bpe.token_to_id("<|NUL|>")),
+            ]
+        )
 
 class ThinkExperiment(Experiment):
     """Experiment inserting a <|THINK|> token during training."""
