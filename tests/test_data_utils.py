@@ -1,7 +1,7 @@
 import os
 import random
 import tempfile
-import pytest
+import torch
 
 from papote.data_utils import (
     RandomPromptSplit,
@@ -110,6 +110,6 @@ def test_seq_weighted_loss_and_binary_entropy():
     assert loss.shape == (3,)
     logits = torch.zeros(2, 2)
     labels = torch.tensor([0, 1])
-    be = binary_entropy(logits, labels, 'none')
+    be = binary_entropy(logits, labels, "none")
     expected = torch.full((2,), 2 * torch.log(torch.tensor(2.0)))
     assert torch.allclose(be, expected)
