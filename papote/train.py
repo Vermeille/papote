@@ -133,6 +133,8 @@ def train(
     world_size,
     experiment="base",
     max_steps=100,
+    ctx=512,
+    test_dir="./test",
 ):
     device = (
         torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
@@ -141,7 +143,7 @@ def train(
         torch.cuda.set_device(rank)
     FULL_BS = global_batch_size
     LOCAL_BS = batch_size
-    CTX = 256
+    CTX = ctx
     ACCUMULATION = int(max(1, round(FULL_BS / (LOCAL_BS * CTX * world_size))))
 
     if pretrained is not None:
@@ -191,7 +193,7 @@ def train(
         to_input_and_target=exp.objective(),
     )
 
-    test_sampler = data.EvalDirSampler("test", CTX + 1, bpe)
+    test_sampler = data.EvalDirSampler(test_dir, CTX + 1, bpe)
     train_loader = DataLoader(
         sampler,
         LOCAL_BS,
@@ -389,6 +391,8 @@ if __name__ == "__main__":
     parser.add_argument("--data", default="data/")
     parser.add_argument("--experiment", default="base", choices=EXPERIMENTS.keys())
     parser.add_argument("--max-steps", type=int, default=100)
+    parser.add_argument("--ctx", type=int, default=512)
+    parser.add_argument("--test-dir", default="./test")
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
@@ -407,6 +411,8 @@ if __name__ == "__main__":
             global_batch_size=args.global_batch_size,
             experiment=args.experiment,
             max_steps=args.max_steps,
+            ctx=args.ctx,
+            test_dir=args.test_dir,
         )
     else:
         train(
@@ -422,4 +428,6 @@ if __name__ == "__main__":
             world_size=1,
             experiment=args.experiment,
             max_steps=args.max_steps,
+            ctx=args.ctx,
+            test_dir=args.test_dir,
         )
