@@ -192,7 +192,6 @@ class ChunkSampler(IterableDataset):
                     continue
                 self.files.append(fpath)
 
-        random.shuffle(self.files)
         print("found", len(self.files), "files")
 
     def __iter__(self):

@@ -193,7 +193,19 @@ def train(
         to_input_and_target=exp.objective(),
     )
 
-    test_sampler = data.EvalDirSampler(test_dir, CTX + 1, bpe)
+    test_sampler = data.ChunkSampler(
+        test_dir or "./test",
+        CTX + 1,
+        "<|SOH|>",
+        EXPERIMENTS["base"](bpe, CTX).transforms(),
+        to_input_and_target=data.NextTokenObjective(),
+    )
+    if test_dir is None:
+        random.seed(42)
+        random.shuffle(sampler.files)
+        test_sampler.files = sampler.files[:10]
+        sampler.files = sampler.files[10:]
+
     train_loader = DataLoader(
         sampler,
         LOCAL_BS,
@@ -203,6 +215,8 @@ def train(
         prefetch_factor=4,
         persistent_workers=True,
     )
+
+    test_loader = DataLoader(test_sampler, LOCAL_BS)
 
     # chinchilla advises 20 tokens per parameter, without counting the
     # embeddings
@@ -284,24 +298,40 @@ def train(
         state = {"metrics": {}}
         test_loss = 0
         topk = tcb.TopkAccAvg(15, False, "running")
+        num_samples = 0
         topk.on_epoch_start(state)
-        for x in test_sampler:
+        for x, y in test_loader:
+            print("test", x.shape, y.shape)
             xgpu = x.to(device)
+            ygpu = y.to(device)
+            mask = exp.loss_mask(xgpu, ygpu)
             with torch.autocast("cuda"):
-                preds = m(xgpu[None, :-1]).float()
-            loss = F.cross_entropy(
-                preds.transpose(1, 2), xgpu[None, 1:], reduction="none"
-            ).mean()
-            # get loss per char to account for different tokenizations
-            loss *= x.shape[0] / len(bpe.decode_text(x))
-            print(preds.shape, xgpu.shape)
+                preds = m(xgpu).float()
+            loss = (
+                F.cross_entropy(
+                    preds.transpose(1, 2),
+                    ygpu,
+                    reduction="none",
+                )
+                * mask
+            )
+            loss = torch.mean(
+                loss.sum(dim=1)
+                / torch.tensor(
+                    [len(bpe.decode_text(xx)) for xx in x.cpu().tolist()]
+                ).to(device)
+            )
 
+            # get loss per char to account for different tokenizations
+            loss *= x.shape[0]
             state["pred"] = preds.transpose(1, 2)
-            state["batch"] = (None, xgpu[None, 1:])
+            state["batch"] = (xgpu, ygpu)
             topk.on_batch_end(state)
             del xgpu
+            del ygpu
             test_loss += loss
-        test_loss /= len(test_sampler)
+            num_samples += x.shape[0]
+        test_loss /= num_samples
         topk.on_epoch_end(state)
 
         basem.train()
@@ -392,7 +422,7 @@ if __name__ == "__main__":
     parser.add_argument("--experiment", default="base", choices=EXPERIMENTS.keys())
     parser.add_argument("--max-steps", type=int, default=100)
     parser.add_argument("--ctx", type=int, default=512)
-    parser.add_argument("--test-dir", default="./test")
+    parser.add_argument("--test-dir")
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
