@@ -301,7 +301,6 @@ def train(
         num_samples = 0
         topk.on_epoch_start(state)
         for x, y in test_loader:
-            print("test", x.shape, y.shape)
             xgpu = x.to(device)
             ygpu = y.to(device)
             mask = exp.loss_mask(xgpu, ygpu)
