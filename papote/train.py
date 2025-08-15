@@ -30,13 +30,16 @@ class BestAndWorst:
 
     @torch.no_grad()
     def on_batch_end(self, state):
+        batch_tokens = state["batch"][0]
+        if isinstance(batch_tokens, (tuple, list)):
+            batch_tokens = batch_tokens[0]
         all = (
             self.best
             + self.worst
             + list(
                 zip(
                     state["loss_per_sentence"],
-                    (self.bpe.decode_text(xx) for xx in state["batch"][0]),
+                    (self.bpe.decode_text(xx) for xx in batch_tokens),
                 )
             )
         )
@@ -66,7 +69,10 @@ class NumTokens:
 
     @torch.no_grad()
     def on_batch_end(self, state):
-        self.num_tokens += state["batch"][0].numel()
+        batch_tokens = state["batch"][0]
+        if isinstance(batch_tokens, (tuple, list)):
+            batch_tokens = batch_tokens[0]
+        self.num_tokens += batch_tokens.numel()
         state["metrics"]["num_tokens"] = self.num_tokens
 
 
@@ -135,6 +141,7 @@ def train(
     max_steps=100,
     ctx=512,
     test_dir="./test",
+    shuffle_k=2,
 ):
     device = (
         torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
@@ -159,7 +166,10 @@ def train(
         bpe.load_state_dict(checkpoint["bpe"])
 
     exp_cls = EXPERIMENTS[experiment]
-    exp = exp_cls(bpe, CTX)
+    if experiment == "shuffle":
+        exp = exp_cls(bpe, CTX, shuffle_k)
+    else:
+        exp = exp_cls(bpe, CTX)
     bpe = exp.bpe
 
     basem = make_transformer(model_size, len(bpe.vocab), CTX).to(device)
@@ -241,22 +251,41 @@ def train(
 
     def train_fun(batch):
         x, y = exp.prepare_batch(batch)
-        x, y = x.to(device), y.to(device)
+
+        def to_device(obj):
+            if torch.is_tensor(obj):
+                return obj.to(device)
+            if isinstance(obj, (list, tuple)):
+                return type(obj)(to_device(o) for o in obj)
+            if isinstance(obj, dict):
+                return {k: to_device(v) for k, v in obj.items()}
+            return obj
+
+        x, y = to_device(x), to_device(y)
         cast = (
             torch.autocast("cuda", dtype=torch.bfloat16)
             if torch.cuda.is_available()
             else nullcontext()
         )
         with cast:
-            pred = m(exp.model_inputs(x)).float()
+            model_inp = exp.model_inputs(x)
+            if isinstance(model_inp, tuple):
+                pred = m(model_inp[0], positions=model_inp[1]).float()
+            elif isinstance(model_inp, dict):
+                pred = m(**model_inp).float()
+            else:
+                pred = m(model_inp).float()
         mask = exp.loss_mask(x, y)
         loss = loss_fn(pred.transpose(1, 2), y, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
         (loss_mean / ACCUMULATION).backward()
         with torch.no_grad():
+            tokens_for_decode = model_inp[0] if isinstance(model_inp, tuple) else model_inp
             loss_per_char = torch.mean(
                 loss.sum(dim=1).cpu()
-                / torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()])
+                / torch.tensor(
+                    [len(bpe.decode_text(xx)) for xx in tokens_for_decode.cpu().tolist()]
+                )
             )
             print("pred", pred.shape)
             metrics_dict = {
@@ -288,7 +317,13 @@ def train(
         for x in test_sampler:
             xgpu = x.to(device)
             with torch.autocast("cuda"):
-                preds = m(xgpu[None, :-1]).float()
+                model_inp = exp.model_inputs(xgpu[None, :-1])
+                if isinstance(model_inp, tuple):
+                    preds = m(model_inp[0], positions=model_inp[1]).float()
+                elif isinstance(model_inp, dict):
+                    preds = m(**model_inp).float()
+                else:
+                    preds = m(model_inp).float()
             loss = F.cross_entropy(
                 preds.transpose(1, 2), xgpu[None, 1:], reduction="none"
             ).mean()
@@ -393,6 +428,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-steps", type=int, default=100)
     parser.add_argument("--ctx", type=int, default=512)
     parser.add_argument("--test-dir", default="./test")
+    parser.add_argument("--shuffle-k", type=int, default=2)
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
@@ -413,6 +449,7 @@ if __name__ == "__main__":
             max_steps=args.max_steps,
             ctx=args.ctx,
             test_dir=args.test_dir,
+            shuffle_k=args.shuffle_k,
         )
     else:
         train(
@@ -430,4 +467,5 @@ if __name__ == "__main__":
             max_steps=args.max_steps,
             ctx=args.ctx,
             test_dir=args.test_dir,
+            shuffle_k=args.shuffle_k,
         )

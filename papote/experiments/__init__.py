@@ -73,6 +73,43 @@ class Experiment:
         return {}
 
 
+@EXPERIMENTS.register("shuffle")
+class ShuffleExperiment(Experiment):
+    """Experiment shuffling token order with explicit position indices."""
+
+    LEFT_TO_RIGHT = "<|LEFT-TO-RIGHT|>"
+
+    def __init__(self, bpe, ctx, num_permutations):
+        self.num_permutations = num_permutations
+        super().__init__(bpe, ctx)
+
+    def configure_tokenizer(self):
+        tokens = [self.LEFT_TO_RIGHT] + [
+            f"<|SHUFFLE{i}|>" for i in range(1, self.num_permutations)
+        ]
+        for t in tokens:
+            self.bpe.add_special(t)
+        self.permutation_tokens = [self.bpe.specials[t] for t in tokens]
+
+    def objective(self):
+        permuter = data.Permute(self.num_permutations, self.ctx)
+        next_token = data.NextTokenObjective()
+        perm_tokens = self.permutation_tokens
+
+        def obj(seq):
+            seq = seq[:-1]
+            idx, perm, permuted = permuter(seq)
+            prefix = torch.tensor([perm_tokens[idx]], dtype=seq.dtype)
+            tokens = torch.cat([prefix, permuted])
+            x, y = next_token(tokens)
+            positions = torch.cat(
+                [torch.tensor([0], dtype=perm.dtype), perm[:-1] + 1]
+            )
+            return (x, positions), y
+
+        return obj
+
+
 @EXPERIMENTS.register("randomcase")
 class RandomCaseExperiment(Experiment):
     UPPER_CASE = "<|UPPER_CASE|>"
