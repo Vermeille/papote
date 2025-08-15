@@ -213,7 +213,7 @@ class RotarySingle(torch.nn.Module):
 class NoRotary(nn.Module):
     """Placeholder module when rotary embeddings are disabled."""
 
-    def forward(self, q, k, v):
+    def forward(self, q, k, v, positions=None):
         return q, k, v
 
 
@@ -251,7 +251,7 @@ class SelfAttention(nn.Module):
         )
         self.rotary = Rotary(head_size) if rotary else NoRotary()
 
-    def forward(self, x, kv_cache=None):
+    def forward(self, x, kv_cache=None, positions=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
         qkv = self.qkv(x).reshape(b, l, 3, h, d).permute(2, 0, 3, 1, 4)
@@ -264,7 +264,7 @@ class SelfAttention(nn.Module):
             )
             # update cache
             kv_cache[:] = [k, v]
-        q, k, v = self.rotary(q, k, v)
+        q, k, v = self.rotary(q, k, v, positions=positions)
         att = nn.functional.scaled_dot_product_attention(
             q, k, v, is_causal=kv_cache is None
         )
@@ -341,8 +341,8 @@ class TransformerBlock(nn.Module):
             tu.xavier(nn.Linear(2 * hidden_size, hidden_size, bias=False)),
         )
 
-    def forward(self, x, kv_cache=None):
-        x = self.sa(self.layer_norm1(x), kv_cache) + x
+    def forward(self, x, kv_cache=None, positions=None):
+        x = self.sa(self.layer_norm1(x), kv_cache, positions=positions) + x
         x = self.feed_forward(self.layer_norm2(x)).add_(x)
         return x
 
@@ -487,7 +487,12 @@ class Transformer(nn.Module):
         ), f"Duplicated undecayable parameters: {dup_undecay}"
 
     def forward(
-        self, input_ids, kv_cache=None, output_ids=None, loss_fn=F.cross_entropy
+        self,
+        input_ids,
+        kv_cache=None,
+        output_ids=None,
+        loss_fn=F.cross_entropy,
+        positions=None,
     ):
         # - all kinds of l2 norm were worse than none
         # - all different ways to plug in positional embedding were worse
@@ -509,14 +514,22 @@ class Transformer(nn.Module):
         outputs = self.token_embedding(input_ids, latents=None, embed=True)
         # pos = self.positional_embedding[:, offset:outputs.size(1) + offset]
         outputs = self.layer_norm_in(outputs)  # + self.pos_norm(pos)
-        outputs = self.rotary(outputs)
+        if isinstance(self.rotary, nn.Identity):
+            outputs = self.rotary(outputs)
+        else:
+            outputs = self.rotary(outputs, positions=positions)
 
         def do(f, *args, **kwargs):
             return f(*args, **kwargs)
 
         for i, transformer_block in enumerate(self.transformer_blocks):
             f = do  # if i % 2 == 0 else torch.utils.checkpoint.checkpoint
-            outputs = f(transformer_block, outputs, kv_cache[i] if kv_cache else None)
+            outputs = f(
+                transformer_block,
+                outputs,
+                kv_cache[i] if kv_cache else None,
+                positions=positions,
+            )
 
         logits = self.token_embedding(input_ids, outputs, embed=False)
         if output_ids is not None:
