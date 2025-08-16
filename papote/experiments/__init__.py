@@ -62,7 +62,7 @@ class Experiment:
 
     def model_inputs(self, x):
         """Transform inputs before passing them to the model."""
-        return x
+        return {"input_ids": x}
 
     def loss_mask(self, x, y):
         """Return the mask to use when computing the loss."""
@@ -154,3 +154,40 @@ class FillInTheMiddleExperiment(Experiment):
                 ),
             ]
         )
+
+
+@EXPERIMENTS.register("shuffle")
+class ShuffleExperiment(Experiment):
+    """Experiment shuffling token order with explicit position indices."""
+
+    LEFT_TO_RIGHT = "<|LEFT-TO-RIGHT|>"
+
+    def __init__(self, bpe, ctx, num_permutations=5):
+        self.num_permutations = num_permutations
+        self.permuter = data.Permute(self.num_permutations, ctx)
+        super().__init__(bpe, ctx)
+
+    def configure_tokenizer(self):
+        tokens = [self.LEFT_TO_RIGHT] + [
+            f"<|SHUFFLE{i}|>" for i in range(1, self.num_permutations)
+        ]
+        for t in tokens:
+            self.bpe.add_special(t)
+        self.permutation_tokens = [self.bpe.specials[t] for t in tokens]
+
+    def prepare_batch(self, batch):
+        x = batch[0]
+        next_token = data.NextTokenObjective()
+        perm_tokens = self.permutation_tokens
+
+        idx, perm, permuted = self.permuter(x)
+        prefix = torch.tensor([perm_tokens[idx]], dtype=x.dtype, device=x.device)
+        tokens = torch.cat([prefix, permuted], dim=1)
+        positions = torch.cat(
+            [torch.tensor([0], dtype=perm.dtype, device=x.device), perm[:-1] + 1]
+        )
+        return {"input_ids": tokens, "positions": positions}, permuted[perm[1:] + 1]
+
+    def model_inputs(self, x):
+        """Transform inputs before passing them to the model."""
+        return x

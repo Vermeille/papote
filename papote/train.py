@@ -262,7 +262,7 @@ def train(
             else nullcontext()
         )
         with cast:
-            pred = m(exp.model_inputs(x)).float()
+            pred = m(**exp.model_inputs(x)).float()
         mask = exp.loss_mask(x, y)
         loss = loss_fn(pred.transpose(1, 2), y, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
@@ -293,7 +293,7 @@ def train(
             outs = []
             for _ in range(10):
                 sample = default_sampler(basem, bpe, length=CTX)
-                outs.append(sample.sample("<|SOH|>"))
+                outs.append(sample.sample("<|LEFT-TO-RIGHT|><|SOH|>"))
 
         state = {"metrics": {}}
         test_loss = 0
