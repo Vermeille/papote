@@ -35,7 +35,7 @@ def test_transformer_rotary_flags():
         rotary_single=False,
     )
     assert isinstance(model_no.transformer_blocks[0].sa.rotary, NoRotary)
-    assert isinstance(model_no.rotary, nn.Identity)
+    assert isinstance(model_no.rotary, NoRotary)
 
 
 def test_rotary_flags_checkpoint_roundtrip():
@@ -49,7 +49,8 @@ def test_rotary_flags_checkpoint_roundtrip():
     ckpt = {"model_type": "tiny-1M", "model": model.state_dict()}
     loaded = transformer_from_checkpoint(ckpt)
     assert isinstance(loaded.transformer_blocks[0].sa.rotary, NoRotary)
-    assert isinstance(loaded.rotary, nn.Identity)
+    assert isinstance(loaded.rotary, NoRotary)
+
 
 def _run_forward(rotary: bool, rotary_single: bool):
     model = Transformer(
