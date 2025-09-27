@@ -246,7 +246,7 @@ class SelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_size = head_size
         self.qkv = tu.normal_init(
-            nn.Linear(hidden_size, head_size * num_heads * 3, bias=False),
+            nn.Linear(hidden_size, head_size * num_heads * 4, bias=False),
             math.sqrt(2 / (5 * hidden_size)),
         )
         self.fc = tu.constant_init(
@@ -257,8 +257,8 @@ class SelfAttention(nn.Module):
     def forward(self, x, kv_cache=None, positions=None):
         b, l, h, d = x.shape[0], x.shape[1], self.num_heads, self.head_size
         # bld -> (q/k/v)bhld
-        qkv = self.qkv(x).reshape(b, l, 3, h, d).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        qkv = self.qkv(x).reshape(b, l, 4, h, d).permute(2, 0, 3, 1, 4)
+        q, k, v, g = qkv
         if kv_cache is not None:
             # update k, v
             k, v = (
@@ -270,7 +270,7 @@ class SelfAttention(nn.Module):
         q, k, v = self.rotary(q, k, v, positions=positions)
         att = nn.functional.scaled_dot_product_attention(
             q.float(), k.float(), v.float(), is_causal=kv_cache is None
-        ).to(x.dtype)
+        ).to(x.dtype) * torch.sigmoid(g)
         # bhld -> blhd
         att = att.permute(0, 2, 1, 3).contiguous().reshape(b, l, h * d)
         return self.fc(att)
