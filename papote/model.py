@@ -539,6 +539,7 @@ class Transformer(nn.Module):
                     self.token_embedding.unembed.weight,
                     output_ids.flatten(),
                     reduction="none",
+                    options=torch.nn.LinearCrossEntropyOptions(),
                 ).view_as(output_ids)
 
         logits = self.token_embedding(input_ids, outputs, embed=False)
