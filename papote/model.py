@@ -531,6 +531,17 @@ class Transformer(nn.Module):
                 positions=positions,
             )
 
+        if output_ids is not None and loss_fn is F.cross_entropy:
+            linear_ce = getattr(F, "linear_cross_entropy", None)
+            if linear_ce is not None:
+                return linear_ce(
+                    outputs.flatten(0, -2),
+                    self.token_embedding.unembed.weight,
+                    output_ids.flatten(),
+                    reduction="none",
+                    options=torch.nn.LinearCrossEntropyOptions(),
+                ).view_as(output_ids)
+
         logits = self.token_embedding(input_ids, outputs, embed=False)
         if output_ids is not None:
             return loss_fn(logits.transpose(2, 1), output_ids, reduction="none")

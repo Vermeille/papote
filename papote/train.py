@@ -262,9 +262,9 @@ def train(
             else nullcontext()
         )
         with cast:
-            pred = m(exp.model_inputs(x)).float()
+            token_loss = m(exp.model_inputs(x), output_ids=y).float()
         mask = exp.loss_mask(x, y)
-        loss = loss_fn(pred.transpose(1, 2), y, mask)
+        loss = loss_fn.from_loss(token_loss, mask)
         loss_mean = (loss * mask).sum() / mask.sum()
         (loss_mean / ACCUMULATION).backward()
         with torch.no_grad():
@@ -272,9 +272,7 @@ def train(
                 loss.sum(dim=1).cpu()
                 / torch.tensor([len(bpe.decode_text(xx)) for xx in x.cpu().tolist()])
             )
-            print("pred", pred.shape)
             metrics_dict = {
-                "pred": pred.detach().transpose(1, 2),
                 "loss_at_pos": LogCtxLoss((loss * mask).sum(0) / mask.sum(0)),
                 "loss_per_sentence": (loss * mask).sum(dim=1) / mask.sum(dim=1),
                 "pos_weight": LogCtxLoss(loss_fn.weight),
@@ -373,7 +371,6 @@ def train(
                 tcb.Log("loss_at_pos", "loss_at_pos"),
                 tcb.Log("pos_weight", "pos_weight"),
                 tcb.Log("num_tokens", "num_tokens"),
-                tcb.TopkAccAvg(k=15, post_each_batch=True),
                 BestAndWorst(bpe),
             ]
         )
