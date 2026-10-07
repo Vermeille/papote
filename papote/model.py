@@ -4,7 +4,7 @@ import torch.nn as nn
 import torchelie.utils as tu
 import torchelie.nn as tnn
 import torch.nn.functional as F
-from torchelie.nn import MultiVQ2, ChannelNorm
+from torchelie.nn import ChannelNorm
 
 
 class SquaredReLU(nn.Module):

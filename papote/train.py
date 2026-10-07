@@ -14,6 +14,7 @@ import papote.data_utils as data
 from papote.bpe import BPE
 import papote.metrics as metrics
 from papote.experiments import EXPERIMENTS
+from papote.tracking import run_with_tracking
 
 
 class BestAndWorst:
@@ -103,13 +104,13 @@ class LogCtxLoss:
     def __init__(self, loss):
         self.loss = loss
 
-    def to_visdom(self, vis, name):
-        vis.line(
-            X=list(range(len(self.loss))),
-            Y=self.loss,
-            win=name,
-            name=name,
-            opts=dict(title=name),
+    def to_trackio(self):
+        import trackio
+
+        values = torch.as_tensor(self.loss).detach().cpu().tolist()
+        return trackio.Table(
+            columns=["position", "value"],
+            data=[[position, value] for position, value in enumerate(values)],
         )
 
     def __pickle__(self):
@@ -135,6 +136,8 @@ def train(
     max_steps=100,
     ctx=512,
     test_dir="./test",
+    trackio_project="papote",
+    trackio_name=None,
 ):
     device = (
         torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
@@ -348,10 +351,8 @@ def train(
         log_every=10,
         test_every=500,
         checkpoint=f"model_{model_size}" if rank == 0 else None,
-        visdom_env=f'mylm-{experiment}_{model_size}-lr={lr}'
-        f'{"-finetune" if pretrained is not None else ""}'
-        if rank == 0 and torch.cuda.is_available()
-        else None,
+        # Attach Torchelie loggers to a named run after configuring the recipe.
+        trackio_project=None,
     )
     callbacks = [
         tcb.Optimizer(
@@ -362,7 +363,7 @@ def train(
             grad_multiplier=ACCUMULATION,
         ),
     ]
-    if torch.cuda.is_available():
+    if rank == 0:
         callbacks.extend(
             [
                 NumTokens(),
@@ -374,6 +375,7 @@ def train(
                 BestAndWorst(bpe),
             ]
         )
+    if torch.cuda.is_available():
         callbacks.insert(
             0,
             tcb.LRSched(
@@ -387,7 +389,7 @@ def train(
             ),
         )
     recipe.callbacks.add_callbacks(callbacks)
-    if torch.cuda.is_available():
+    if rank == 0:
         recipe.test_loop.callbacks.add_callbacks(
             [
                 tcb.Log("outs", "outs"),
@@ -400,7 +402,25 @@ def train(
     recipe.register("model_type", model_size)
     # recipe.register('bpe', bpe)
     recipe.to(device)
-    recipe.run(max_steps)
+    run_with_tracking(
+        recipe,
+        max_steps,
+        rank=rank,
+        project=trackio_project,
+        name=trackio_name,
+        config={
+            "experiment": experiment,
+            "model": model_size,
+            "lr": lr,
+            "batch_size": batch_size,
+            "global_batch_size": global_batch_size,
+            "context_length": ctx,
+            "world_size": world_size,
+            "chinchilla_factor": chinchilla_factor,
+            "max_steps": max_steps,
+            "finetune": pretrained is not None,
+        },
+    )
 
 
 if __name__ == "__main__":
@@ -419,6 +439,9 @@ if __name__ == "__main__":
     parser.add_argument("--max-steps", type=int, default=100)
     parser.add_argument("--ctx", type=int, default=512)
     parser.add_argument("--test-dir")
+    parser.add_argument("--trackio-project", default="papote")
+    parser.add_argument("--trackio-name", help="Run name (generated if omitted)")
+    parser.add_argument("--no-trackio", action="store_true", help="Disable tracking")
     args = parser.parse_args()
 
     if not args.bpe and not args.pretrained:
@@ -439,6 +462,8 @@ if __name__ == "__main__":
             max_steps=args.max_steps,
             ctx=args.ctx,
             test_dir=args.test_dir,
+            trackio_project=None if args.no_trackio else args.trackio_project,
+            trackio_name=args.trackio_name,
         )
     else:
         train(
@@ -456,4 +481,6 @@ if __name__ == "__main__":
             max_steps=args.max_steps,
             ctx=args.ctx,
             test_dir=args.test_dir,
+            trackio_project=None if args.no_trackio else args.trackio_project,
+            trackio_name=args.trackio_name,
         )

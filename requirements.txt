@@ -9,4 +9,4 @@ flask-socketio
 colored
 pytest
 crayons
-visdom
+trackio>=0.40,<1
