@@ -16,7 +16,7 @@ dependencies = [
     "colored",
     "pytest",
     "crayons",
-    "visdom",
+    "trackio>=0.40,<1",
 ]
 
 [build-system]
@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["papote*", "model_specs*"]
 [tool.uv.sources]
-torchelie = { git = "https://github.com/Vermeille/Torchelie.git", rev = "a3ca96b233cd7433b6afbade3fa6faf50126e96c" }
+torchelie = { git = "https://github.com/Vermeille/Torchelie.git", rev = "51878f8477f52fc7a667eca1ce86d543835971fe" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
